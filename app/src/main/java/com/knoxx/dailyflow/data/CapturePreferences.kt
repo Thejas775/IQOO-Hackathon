@@ -51,9 +51,24 @@ object CapturePreferences {
         "com.vivo.remotecontrol",
         "com.vivo.pcsuite",
         "com.vivo.appstore",
-        "com.android.vending",                    // Play Store
-        "com.google.android.inputmethod.latin",   // keyboards echo what is typed elsewhere
-        "com.vivo.aiengine"
+
+        // Gesture and system-UI overlays. These sit above whatever app is
+        // actually open, so they fire events naming themselves while the real
+        // content on screen belongs to something else — 94 events from upslide
+        // and 27 from systemuiplugin in 75 seconds of ordinary use, every one
+        // of them later thrown out by the window-mismatch guard. Blocking them
+        // here drops them a stage earlier and saves reading the window at all.
+        "com.vivo.upslide",
+        "com.vivo.systemuiplugin",
+        "com.vivo.globalsearch",
+        "com.vivo.aiengine",
+
+        // Storefront and keyboard. A keyboard is the worst of these: it echoes
+        // what is being typed into whatever app is open, so capturing it means
+        // recording the same words twice, once without any idea where they
+        // were going.
+        "com.android.vending",
+        "com.google.android.inputmethod.latin"
     )
 
     /**
@@ -66,7 +81,7 @@ object CapturePreferences {
      * so an app the user deliberately allowed is never re-blocked behind their
      * back.
      */
-    private const val DEFAULTS_VERSION = 2
+    private const val DEFAULTS_VERSION = 3
 
     private lateinit var prefs: SharedPreferences
 
