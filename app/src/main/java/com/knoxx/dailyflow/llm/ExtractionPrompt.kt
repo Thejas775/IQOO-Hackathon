@@ -212,6 +212,108 @@ object ExtractionPrompt {
         append(rawText.take(MAX_SNIPPET_CHARS))
     }
 
+    /** How much of each screen a batched prompt carries.
+     *
+     *  Tighter than [MAX_SNIPPET_CHARS] because five of them share one context
+     *  window. Measured on real captures: 770 to 3,120 characters, averaging
+     *  1,709 — so this truncates only the longest, and those are scrolled feeds
+     *  whose tail is rarely the part that matters. */
+    private const val MAX_BATCH_SNIPPET_CHARS = 2200
+
+    /**
+     * One prompt covering several screens, answered as a JSON array.
+     *
+     * Batching is the whole point: at roughly ten seconds per inference, one
+     * call per screen is the pipeline's binding constraint. Five screens in one
+     * call is not five times cheaper — the prompt is longer and the reply is
+     * longer — but it pays the instructions and the model's own warm-up once
+     * instead of five times.
+     *
+     * Screens are numbered and the model is told to echo the number back. That
+     * is what makes a short reply survivable: results are matched by their
+     * stated index rather than by position, so a batch that returns four
+     * objects for five screens loses one row instead of misfiling all five.
+     */
+    fun buildJsonBatch(
+        screens: List<Triple<String, Long, String>>,
+        knownPeople: List<String>,
+        openCommitments: List<Pair<Long, String>>
+    ): String = buildString {
+        appendLine(
+            "You are DailyFlow, a private memory that runs entirely on one person's phone. " +
+                "Call that person \"you\". Below are several screens captured from their phone, " +
+                "flattened from the Android accessibility tree — no layout, no speaker labels, " +
+                "only words in roughly reading order."
+        )
+        appendLine()
+        if (knownPeople.isNotEmpty()) {
+            appendLine("PEOPLE ALREADY KNOWN: ${knownPeople.take(20).joinToString(", ")}")
+        }
+        if (openCommitments.isNotEmpty()) {
+            appendLine("STILL OPEN (the owner has not finished these yet):")
+            openCommitments.forEachIndexed { index, (_, summary) ->
+                appendLine("${index + 1}. $summary")
+            }
+        }
+        appendLine()
+
+        appendLine("For EACH screen decide whether it contains something worth remembering.")
+        appendLine(
+            "Worth remembering: a promise either side made, a request, a decision, a bill or " +
+                "payment due, an order or booking with its date, a work item someone asked for, " +
+                "a question awaiting an answer, or a concrete plan."
+        )
+        appendLine(
+            "Not worth remembering: adverts, app chrome, navigation, notification spam, small " +
+                "talk with no content, or a list of messages with nothing new in it."
+        )
+        appendLine(
+            "When genuinely unsure, prefer to record it. A low-value memory costs the owner a " +
+                "glance; a missed one costs them the thing itself."
+        )
+        appendLine()
+
+        appendLine(
+            "Reply with ONLY a JSON array, no markdown fence and no text around it. One object " +
+                "per screen, in this exact shape:"
+        )
+        appendLine(
+            "[{\"screen\":1,\"isLoop\":true,\"summary\":\"\",\"quote\":\"\",\"direction\":" +
+                "\"self_promise|they_asked|from_them\",\"person\":\"\",\"category\":" +
+                "\"Work|Personal|Home|Other\",\"due\":\"\",\"project\":\"\",\"completes\":0}]"
+        )
+        appendLine()
+        appendLine("Rules:")
+        appendLine("- screen must be the number of the screen the object describes.")
+        appendLine("- Include one object for every screen, even when isLoop is false.")
+        appendLine("- Use an empty string for anything absent. Never write the word empty or null.")
+        appendLine(
+            "- quote must be copied character for character from that screen's text. If no " +
+                "single sentence supports the summary, use an empty string."
+        )
+        appendLine(
+            "- due is yyyy-MM-ddTHH:mm:ss resolved against that screen's CAPTURED AT. If only a " +
+                "date is stated, use 00:00:00 and the app will apply a sensible hour. Never " +
+                "invent a time that was not said."
+        )
+        appendLine(
+            "- completes is the number of a STILL OPEN item that this screen shows is now " +
+                "finished — paid, sent, delivered or explicitly called done — or 0. Discussing " +
+                "it or promising it again is not completion."
+        )
+        appendLine()
+
+        screens.forEachIndexed { index, (packageName, capturedAt, rawText) ->
+            appendLine("=== SCREEN ${index + 1} ===")
+            appendLine("FROM: $packageName")
+            appendLine("CAPTURED AT: ${isoUtcStamp.format(Date(capturedAt))}")
+            appendLine(rawText.take(MAX_BATCH_SNIPPET_CHARS))
+            appendLine()
+        }
+
+        appendLine("The JSON array:")
+    }
+
     /** Parses the model's DUE line into epoch millis, or null. */
     fun parseDue(raw: String?): Long? {
         val value = raw?.trim()?.trim('"')

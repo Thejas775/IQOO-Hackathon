@@ -43,11 +43,19 @@ object GemmaEngine {
      * system-wide low-memory kill: the phone froze whenever a question was
      * asked or an extraction pass ran.
      *
-     * Extraction prompts are a single screen's text and a ~40 token reply, so
-     * they never came close to needing 32K. Nothing in the app pays for this
-     * reduction except a very long Ask conversation.
+     * Raised from 4096 to 8192 when extraction moved to batching. Five screens
+     * truncated to 2,200 characters each is roughly 2,750 tokens of input plus
+     * instructions, and the JSON array coming back is five objects rather than
+     * one — 4096 would have been tight enough that a long batch could silently
+     * truncate mid-reply, which reads as a model failure rather than a budget
+     * one. 8192 is still a quarter of the 32768 that was in place when the
+     * freeze was first reported.
+     *
+     * That freeze, for the record, was never traced to memory at all: the logs
+     * showed no OOM, no kill, and a crash loop belonging to a vivo system app.
+     * So this constant is sized for the work, not defensively.
      */
-    private const val MAX_TOKENS = 4096
+    private const val MAX_TOKENS = 8192
 
     enum class State { Absent, Loading, Ready, Failed }
 
