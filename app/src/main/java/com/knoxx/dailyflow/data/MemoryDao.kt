@@ -238,7 +238,11 @@ interface MemoryDao {
     @Query(
         "SELECT " +
             "IFNULL(SUM(CASE WHEN commitmentDone = 0 AND direction IN ('SELF_PROMISE','THEY_ASKED') THEN 1 ELSE 0 END), 0) AS openCount, " +
-            "IFNULL(SUM(CASE WHEN commitmentDone = 1 THEN 1 ELSE 0 END), 0) AS kept, " +
+            // Gated on direction to match openCount. Without it "Kept" counted
+            // any ticked row, including things that were never an obligation —
+            // so the pair read as 1 open and 4 kept for a person who had only
+            // ever been asked one thing.
+            "IFNULL(SUM(CASE WHEN commitmentDone = 1 AND direction IN ('SELF_PROMISE','THEY_ASKED') THEN 1 ELSE 0 END), 0) AS kept, " +
             "COUNT(*) AS total, " +
             "MAX(timestamp) AS lastAt " +
             "FROM memories WHERE isLoop = 1 AND personName = :person"

@@ -108,13 +108,32 @@ object MemorySearch {
                     listOfNotNull(memory.summary, memory.personName, memory.sourceQuote)
                         .joinToString(" ")
                 )
-                val overlap = terms.count { it in haystack }
+                val overlap = terms.count { term -> matches(term, haystack) }
                 Hit(memory, overlap.toFloat() / terms.size)
             }
             .filter { it.score > 0f }
             .sortedByDescending { it.score }
             .take(TOP_K)
             .toList()
+    }
+
+    /**
+     * Whether a question word appears in a memory, allowing for word endings.
+     *
+     * Exact matching made the fallback much weaker than it looks: "what did
+     * Jitendra ask" does not match "Jitendra asked you", and "what did I
+     * promise" does not match "you promised". Nearly every question about the
+     * past is phrased in a different tense from the memory of it.
+     *
+     * Prefix matching in either direction handles that without a stemmer.
+     * Restricted to words of four characters or more, because below that the
+     * prefixes are too generic — "car" would match "card" and "care", and at
+     * that length a false match is more likely than a real one.
+     */
+    private fun matches(term: String, haystack: Set<String>): Boolean {
+        if (term in haystack) return true
+        if (term.length < 4) return false
+        return haystack.any { it.length >= 4 && (it.startsWith(term) || term.startsWith(it)) }
     }
 
     /** Stopwords removed so "what did I promise Rahul" matches on "promise"

@@ -94,10 +94,18 @@ class PersonViewModel(app: Application) : AndroidViewModel(app) {
             ) { memories, stats -> memories to stats }
                 .collect { (memories, stats) ->
                     // Split by obligation rather than by date: a commitment is
-                    // something still owed, an interaction is everything else
-                    // that happened with this person.
+                    // something owed, an interaction is everything else that
+                    // happened with this person.
+                    //
+                    // Done commitments stay on this side of the split. They
+                    // used to move across once ticked, so the card vanished
+                    // from the list the user had just tapped and reappeared
+                    // under the other tab — and the tab counts both changed at
+                    // once, which reads as the app losing the thing rather
+                    // than completing it. It stays put and shows as struck
+                    // through, matching the Today screen.
                     val (commitments, interactions) = memories.partition {
-                        it.directionOrNull?.isObligation == true && !it.commitmentDone
+                        it.directionOrNull?.isObligation == true
                     }
                     _state.value = _state.value.copy(
                         stats = stats,
