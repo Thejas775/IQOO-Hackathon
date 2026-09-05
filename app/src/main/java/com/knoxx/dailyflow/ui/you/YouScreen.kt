@@ -62,6 +62,7 @@ import com.knoxx.dailyflow.ui.theme.VioletTintStrong
 import com.knoxx.dailyflow.work.ExtractionRunner
 import com.knoxx.dailyflow.work.ExtractionScheduler
 import java.util.Calendar
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -102,7 +103,31 @@ class YouViewModel(app: Application) : AndroidViewModel(app) {
         ExtractionRunner.progress
     ) { pending, progress -> pending to progress }
 
-    val state: StateFlow<YouState> = combine(device, work) { d, w ->
+    /**
+     * Accessibility and notification access, as a flow.
+     *
+     * Neither is observable. They are granted in Settings, in another process,
+     * and Android offers no callback when they change. They used to be read
+     * inline while building the state, which meant the value was only ever as
+     * fresh as the last time some *other* flow happened to emit — so coming
+     * back from Settings having just enabled capture showed it still off,
+     * sometimes for minutes, until an unrelated capture arrived.
+     *
+     * Holding them here makes the re-read explicit: [refreshPermissions] is
+     * called when the screen resumes, which is exactly when the user has
+     * returned from granting one.
+     */
+    private val permissions = MutableStateFlow(readPermissions())
+
+    private fun readPermissions(): Pair<Boolean, Boolean> =
+        CapturePermission.isEnabled(getApplication()) to
+            NotificationPermission.isEnabled(getApplication())
+
+    fun refreshPermissions() {
+        permissions.value = readPermissions()
+    }
+
+    val state: StateFlow<YouState> = combine(device, work, permissions) { d, w, p ->
         @Suppress("UNCHECKED_CAST")
         val paused = d[0] as Boolean
         val events = d[1] as Long
@@ -111,8 +136,8 @@ class YouViewModel(app: Application) : AndroidViewModel(app) {
         @Suppress("UNCHECKED_CAST")
         val timestamps = d[4] as List<Long>
         YouState(
-            captureEnabled = CapturePermission.isEnabled(getApplication()),
-            notificationAccess = NotificationPermission.isEnabled(getApplication()),
+            captureEnabled = p.first,
+            notificationAccess = p.second,
             paused = paused,
             eventsSeen = events,
             hoursOn = if (since > 0) ((System.currentTimeMillis() - since) / 3_600_000L).toInt() else 0,

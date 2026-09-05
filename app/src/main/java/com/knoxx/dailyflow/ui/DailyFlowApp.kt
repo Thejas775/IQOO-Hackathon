@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,6 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.knoxx.dailyflow.capture.CapturePermission
 import com.knoxx.dailyflow.capture.NotificationPermission
@@ -169,6 +173,20 @@ fun DailyFlowApp() {
                     val vm: YouViewModel = viewModel()
                     val youState by vm.state.collectAsState()
                     val context = LocalContext.current
+
+                    // Accessibility and notification access are granted in
+                    // Settings, in another process, and nothing tells the app
+                    // when that happens. Coming back here is the one moment we
+                    // know to look again — without it the card kept saying
+                    // capture was off after the user had just turned it on.
+                    val lifecycleOwner = LocalLifecycleOwner.current
+                    DisposableEffect(lifecycleOwner) {
+                        val observer = LifecycleEventObserver { _, event ->
+                            if (event == Lifecycle.Event.ON_RESUME) vm.refreshPermissions()
+                        }
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                    }
                     YouScreen(
                         state = youState,
                         onTogglePause = { vm.setPaused(!youState.paused) },
