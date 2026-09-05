@@ -8,14 +8,30 @@ import java.util.TimeZone
 /**
  * The prompt that turns one captured screen into one memory.
  *
- * Two shapes were possible and the choice matters. Wick asked Gemini for a
- * JSON array covering twenty snippets at once, enforced by a response schema.
- * Neither half of that survives on-device: LiteRT-LM has no schema-constrained
- * decoding, and an unconstrained small model asked for JSON produces trailing
- * commas, smart quotes and unterminated strings often enough that the parser
- * becomes the bug. So this asks for one screen at a time in a flat
- * `KEY: value` format, which degrades gracefully — a malformed line is one
- * missing field, not a discarded batch of twenty.
+ * Two shapes were possible. Wick asked Gemini for a JSON array covering twenty
+ * snippets at once, enforced by a response schema. This asks for one screen at
+ * a time in a flat `KEY: value` format, which degrades gracefully: a malformed
+ * line costs one field, not a discarded batch of twenty.
+ *
+ * This file previously justified that choice by claiming LiteRT-LM has no
+ * schema-constrained decoding. That is **wrong**, and the correction matters
+ * because the claim was load-bearing. LiteRT-LM 0.11.0 ships a full
+ * tool-calling API — Tool, ToolCall, ToolManager, ToolParam, OpenApiTool,
+ * ReflectionTool with JSON schema generation — together with
+ * ExperimentalFlags.enableConversationConstrainedDecoding. Structured output
+ * with an enforced schema is available. It is @ExperimentalApi and set through
+ * a global flag object rather than EngineConfig, but it exists.
+ *
+ * The other half of the old rationale — that a small model asked for
+ * unconstrained JSON emits trailing commas and unterminated strings often
+ * enough to make the parser the bug — is plausible but has never been measured
+ * on E4B. It was carried over by analogy, not from evidence.
+ *
+ * So the flat format is currently a choice defended by its failure mode rather
+ * than by necessity, and that is the honest standing of it. The Tuning screen
+ * is the instrument to settle it: run the same captures through a
+ * schema-constrained tool call and count the malformed replies against this
+ * format's own miss rate.
  */
 object ExtractionPrompt {
 
