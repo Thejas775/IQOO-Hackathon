@@ -85,6 +85,13 @@ interface MemoryDao {
     )
     suspend fun getRecentEmbeddings(packageName: String, since: Long, limit: Int): List<ByteArray>
 
+    /** Recent raw text for the same app, for the token-overlap dedup gate. */
+    @Query(
+        "SELECT rawText FROM memories WHERE packageName = :packageName " +
+            "AND timestamp > :since ORDER BY timestamp DESC LIMIT :limit"
+    )
+    suspend fun getRecentTexts(packageName: String, since: Long, limit: Int): List<String>
+
     @Query("SELECT summary FROM memories WHERE isLoop = 1 AND summary IS NOT NULL")
     suspend fun getAllSummaries(): List<String>
 

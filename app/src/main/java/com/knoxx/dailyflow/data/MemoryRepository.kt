@@ -3,6 +3,7 @@ package com.knoxx.dailyflow.data
 import android.content.Context
 import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
+import java.util.Locale
 import kotlin.math.sqrt
 import com.knoxx.dailyflow.debug.DebugLog
 import kotlinx.coroutines.CoroutineScope
@@ -77,6 +78,16 @@ object MemoryRepository {
      *  every candidate here is a BLOB that must be deserialised. */
     private const val RECENT_EMBEDDING_SCAN = 200
 
+    /** How many recent screens from the same app the overlap gate compares
+     *  against. Text rather than vectors now, so this is a cheap string scan. */
+    private const val RECENT_TEXT_SCAN = 40
+
+    /** Above this share of words in common, treat it as the same screen again.
+     *  Two captures of one screen differing only by a badge or a ticking
+     *  timestamp land near 0.95; two different conversations in the same app
+     *  land near 0.45, so there is a wide gap to sit in. */
+    private const val OVERLAP_THRESHOLD = 0.80f
+
     /** How many open commitments the extraction prompt is shown. Small: they
      *  are prefill on every captured screen, and a long list makes the model
      *  likelier to match one loosely. */
@@ -130,22 +141,39 @@ object MemoryRepository {
             return
         }
 
-        // Gate 2 — meaning. Catches a screen where the substance is identical
-        // but something incidental moved: a new unread badge, a relative
-        // timestamp ticking from "3 min" to "5 min". Exact match cannot see
-        // those; they are different strings describing the same moment.
-        val vector = embedder?.embed(capture.text)
-        if (vector != null) {
-            val recent = dao.getRecentEmbeddings(capture.packageName, since, RECENT_EMBEDDING_SCAN)
-            val closest = recent.maxOfOrNull { bytes ->
-                val other = FloatArrayConverter.toFloatArray(bytes)
-                if (other == null) 0f else cosineSimilarity(vector, other)
-            } ?: 0f
-            if (closest >= SEMANTIC_THRESHOLD) {
-                DebugLog.log("capture", "drop near-dup ${capture.packageName} sim=$closest :: $preview")
+        // Gate 2 — token overlap. Catches a screen where the substance is
+        // identical but something incidental moved: a new unread badge, a
+        // relative timestamp ticking from "3 min" to "5 min".
+        //
+        // This used to be cosine similarity over MobileBERT embeddings, and it
+        // was silently destroying the app. Measured over one real session:
+        // 1,152 of 1,901 captures were dropped here, 44 kept. Different
+        // people's conversations scored as duplicates of each other — chats
+        // with Achan, Amma and Apurva Didi all matched above 0.95 — because
+        // every WhatsApp screen shares the same chrome ("Back … Video call
+        // Voice call More options"), and that boilerplate is most of the
+        // tokens, so it dominated the embedding. The distinctive part, the
+        // name and the message, barely moved the vector. It is the same
+        // weakness that keeps MobileBERT off retrieval: it cannot tell short,
+        // structurally similar texts apart.
+        //
+        // Jaccard overlap does not have that failure. Shared chrome counts
+        // once, and the differing names and content pull the score down hard:
+        // the two chat screens above score about 0.43 rather than 0.95.
+        val tokens = tokenSet(capture.text)
+        if (tokens.isNotEmpty()) {
+            val recent = dao.getRecentTexts(capture.packageName, since, RECENT_TEXT_SCAN)
+            val closest = recent.maxOfOrNull { jaccard(tokens, tokenSet(it)) } ?: 0f
+            if (closest >= OVERLAP_THRESHOLD) {
+                DebugLog.log("capture", "drop near-dup ${capture.packageName} overlap=$closest :: $preview")
                 return
             }
         }
+
+        // Still computed and stored, though nothing reads it yet: a better
+        // embedder can be sideloaded later, and embeddingModel keeps these
+        // vectors identifiable as MobileBERT's rather than comparable to it.
+        val vector = embedder?.embed(capture.text)
 
         dao.insert(
             MemoryEntity(
@@ -173,6 +201,25 @@ object MemoryRepository {
      *  why [MemoryEntity.embeddingModel] exists. Without it, a model swap
      *  would make every comparison score zero and dedup would silently stop
      *  working rather than fail visibly. */
+
+    /** Words of three characters or more, lowercased and de-duplicated.
+     *  Short tokens are dropped because UI chrome is full of them ("to", "PM",
+     *  "1") and they inflate the overlap between unrelated screens. */
+    private fun tokenSet(text: String): Set<String> =
+        text.lowercase(Locale.US)
+            .split(NON_WORD)
+            .filter { it.length >= 3 }
+            .toSet()
+
+    private val NON_WORD = Regex("[^\p{L}\p{N}]+")
+
+    /** Intersection over union. 1.0 is the same words, 0.0 shares none. */
+    private fun jaccard(a: Set<String>, b: Set<String>): Float {
+        if (a.isEmpty() || b.isEmpty()) return 0f
+        val shared = a.count { it in b }
+        val union = a.size + b.size - shared
+        return if (union == 0) 0f else shared.toFloat() / union
+    }
     private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
         if (a.size != b.size) return 0f
         var dot = 0f
