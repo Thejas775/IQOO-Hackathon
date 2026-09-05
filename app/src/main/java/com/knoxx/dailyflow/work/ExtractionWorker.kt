@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.knoxx.dailyflow.debug.DebugLog
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -37,6 +38,7 @@ class ExtractionWorker(context: Context, params: WorkerParameters) :
             // anyway would repeat the crash this class exists to prevent, so
             // the pass is skipped and retried later instead.
             Log.w(TAG, "Could not promote to foreground; skipping this pass", t)
+            DebugLog.log("extract", "pass SKIPPED: foreground promotion refused (${t.javaClass.simpleName})")
             return@withLock Result.retry()
         }
 
@@ -51,6 +53,7 @@ class ExtractionWorker(context: Context, params: WorkerParameters) :
             Result.success()
         } catch (t: Throwable) {
             Log.e(TAG, "Extraction pass failed", t)
+            DebugLog.log("extract", "pass FAILED: ${t.javaClass.simpleName}: ${t.message}")
             Result.retry()
         }
     }
