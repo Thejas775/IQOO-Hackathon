@@ -24,14 +24,27 @@ import java.util.TimeZone
  *
  * The other half of the old rationale — that a small model asked for
  * unconstrained JSON emits trailing commas and unterminated strings often
- * enough to make the parser the bug — is plausible but has never been measured
- * on E4B. It was carried over by analogy, not from evidence.
+ * enough to make the parser the bug — has now been measured, and it is also
+ * wrong for this model. Four runs of an unconstrained JSON extraction prompt
+ * on E4B, GPU backend, through the Tuning screen: 4/4 valid JSON, byte
+ * identical at 329 characters each, balanced braces, no trailing commas. It
+ * resolved "25 days" from a stated June 29 2026 into 2026-07-24 correctly, and
+ * echoed a typo in the schema key rather than quietly repairing it. Timings
+ * were 29.4s cold including the model load, then 7.6s, 10.1s and 10.1s warm.
  *
- * So the flat format is currently a choice defended by its failure mode rather
- * than by necessity, and that is the honest standing of it. The Tuning screen
- * is the instrument to settle it: run the same captures through a
- * schema-constrained tool call and count the malformed replies against this
- * format's own miss rate.
+ * One real flaw showed up: asked for "name or empty" it returned the literal
+ * string "empty" rather than an empty value. The flat format's NULLISH set
+ * already absorbs exactly that, and a JSON path would need its own equivalent.
+ *
+ * So the flat format is a choice, not a necessity, and both reasons originally
+ * given for it were false. It is still defensible on its failure mode — one
+ * malformed line costs one field, where a malformed batch costs twenty rows —
+ * and that is now the only argument for it.
+ *
+ * What this does NOT establish: the test repeated one prompt rather than
+ * running twenty different screens, so it shows validity and determinism for
+ * this input, not robustness across the messy ones. Before any move to JSON
+ * and batching, run the varied captures.
  */
 object ExtractionPrompt {
 
