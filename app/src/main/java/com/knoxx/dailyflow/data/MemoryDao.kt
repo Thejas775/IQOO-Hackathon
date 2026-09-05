@@ -114,6 +114,14 @@ interface MemoryDao {
     )
     fun observeOpenCommitments(): Flow<List<MemoryEntity>>
 
+    /** Everything understood, newest first — the Memories screen.
+     *  Bounded because this is a scrolling list, not an export. */
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND summary IS NOT NULL " +
+            "ORDER BY timestamp DESC LIMIT :limit"
+    )
+    fun observeAllMemories(limit: Int): Flow<List<MemoryEntity>>
+
     /** The same set as [observeOpenCommitments], fetched once for the
      *  extraction prompt. Bounded because every one of these is prefill paid
      *  on every captured screen in the pass. */

@@ -329,6 +329,7 @@ object MemoryRepository {
     fun observeDueBetween(start: Long, end: Long) = dao.observeDueBetween(start, end)
     fun observeCountDueBetween(start: Long, end: Long) = dao.observeCountDueBetween(start, end)
     fun observeOpenCommitments() = dao.observeOpenCommitments()
+    fun observeAllMemories(limit: Int = 300) = dao.observeAllMemories(limit)
     fun observeKeptBetween(start: Long, end: Long) = dao.observeKeptBetween(start, end)
     fun observeMonth(start: Long, end: Long) = dao.observeMonth(start, end)
     fun observeDistinctPeople() = dao.observeDistinctPeople()

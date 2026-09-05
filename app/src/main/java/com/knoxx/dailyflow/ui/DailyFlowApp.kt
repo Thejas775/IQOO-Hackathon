@@ -30,9 +30,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.knoxx.dailyflow.capture.CapturePermission
 import com.knoxx.dailyflow.capture.NotificationPermission
+import com.knoxx.dailyflow.debug.DebugLog
 import com.knoxx.dailyflow.ui.apps.AllowListScreen
 import com.knoxx.dailyflow.ui.apps.AllowListViewModel
 import com.knoxx.dailyflow.ui.ask.AskScreen
+import com.knoxx.dailyflow.ui.dev.DevScreen
+import com.knoxx.dailyflow.ui.dev.DevViewModel
+import com.knoxx.dailyflow.ui.memories.MemoriesScreen
+import com.knoxx.dailyflow.ui.memories.MemoriesViewModel
 import com.knoxx.dailyflow.ui.ask.AskViewModel
 import com.knoxx.dailyflow.ui.calendar.CalendarScreen
 import com.knoxx.dailyflow.ui.calendar.CalendarViewModel
@@ -64,6 +69,8 @@ fun DailyFlowApp() {
     var showAdd by remember { mutableStateOf(false) }
     var showModelSetup by remember { mutableStateOf(false) }
     var showAllowList by remember { mutableStateOf(false) }
+    var showMemories by remember { mutableStateOf(false) }
+    var showDev by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val modelVm: ModelSetupViewModel = viewModel()
@@ -170,7 +177,8 @@ fun DailyFlowApp() {
                         // opens Settings rather than showing a dialog.
                         onEnableCapture = { context.startActivity(CapturePermission.settingsIntent()) },
                         onManageApps = { showAllowList = true },
-                        onOpenMemories = { },
+                        onOpenMemories = { showMemories = true },
+                        onOpenDev = { showDev = true },
                         onErase = vm::eraseEverything,
                         onSync = vm::sync,
                         onStopSync = vm::stopSync,
@@ -187,7 +195,7 @@ fun DailyFlowApp() {
         // The person detail owns the whole screen, so the tab bar is hidden
         // while it is open — showing it would suggest the detail is a fifth
         // tab, and tapping the current tab would appear to do nothing.
-        if (openPerson == null && !showAllowList) {
+        if (openPerson == null && !showAllowList && !showMemories && !showDev) {
             BottomNav(
                 current = tab,
                 onSelect = { tab = it },
@@ -206,6 +214,29 @@ fun DailyFlowApp() {
                 apps = apps,
                 onBack = { showAllowList = false },
                 onToggle = appsVm::setAllowed
+            )
+        }
+
+        if (showMemories) {
+            val memVm: MemoriesViewModel = viewModel()
+            val memories by memVm.memories.collectAsState()
+            MemoriesScreen(
+                memories = memories,
+                onBack = { showMemories = false }
+            )
+        }
+
+        if (showDev) {
+            val devVm: DevViewModel = viewModel()
+            val devState by devVm.state.collectAsState()
+            val ctx = LocalContext.current
+            DevScreen(
+                state = devState,
+                tracePath = DebugLog.path(ctx),
+                onBack = { showDev = false },
+                onRun = devVm::run,
+                onLoadReal = devVm::loadRealPrompt,
+                onTestReminders = devVm::sendTestReminders
             )
         }
     }

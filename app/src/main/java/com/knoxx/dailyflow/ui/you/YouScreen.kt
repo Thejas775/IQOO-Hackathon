@@ -163,6 +163,7 @@ fun YouScreen(
     onEnableCapture: () -> Unit,
     onManageApps: () -> Unit,
     onOpenMemories: () -> Unit,
+    onOpenDev: () -> Unit,
     onErase: () -> Unit,
     onSync: () -> Unit,
     onStopSync: () -> Unit,
@@ -205,6 +206,7 @@ fun YouScreen(
                 )
                 NavRow("Manage app access", "Choose which apps DailyFlow may read", null, onManageApps)
                 NavRow("Connect an assistant", "Coming later — MCP link and password", null) { }
+                NavRow("Tuning", "Send test reminders, and run prompts against Gemma", null, onOpenDev)
             }
         }
 

@@ -108,3 +108,47 @@ object ReminderScheduler {
         DebugLog.log("remind", "fired id=$notificationId :: $summary")
     }
 }
+
+/**
+ * Fires every currently-scheduled reminder immediately, with its real
+ * deadline shown in the text.
+ *
+ * A preview, not a substitute: it does not mark reminderSent and does not
+ * cancel the real scheduled fire, so the genuine nudge still arrives on time.
+ * Carried over from Wick because waiting for a real deadline is not a way to
+ * find out whether permission, channel and styling actually work — and on a
+ * demo day, finding that out late is finding out too late.
+ */
+object ReminderTester {
+
+    private val labelFormat = java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.US)
+
+    /** How many it fired. Zero means nothing is scheduled yet, which is a
+     *  different problem from notifications not working, so the caller can
+     *  say which. */
+    suspend fun fireAll(context: android.content.Context): Int {
+        val pending = com.knoxx.dailyflow.data.MemoryRepository.pendingReminders()
+        if (pending.isEmpty()) {
+            ReminderScheduler.show(
+                context,
+                "No reminders scheduled yet — read your day first, then try this again.",
+                "",
+                notificationId = -2
+            )
+            return 0
+        }
+        pending.forEach { memory ->
+            val summary = memory.summary ?: return@forEach
+            val due = memory.dueAt ?: return@forEach
+            val kind = if (memory.dueAtExplicit) "at" else "by"
+            ReminderScheduler.show(
+                context,
+                "[$kind ${labelFormat.format(java.util.Date(due))}] $summary",
+                memory.packageName,
+                notificationId = memory.id.toInt()
+            )
+        }
+        com.knoxx.dailyflow.debug.DebugLog.log("remind", "test fired ${pending.size}")
+        return pending.size
+    }
+}
