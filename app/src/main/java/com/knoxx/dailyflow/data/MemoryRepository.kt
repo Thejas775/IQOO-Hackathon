@@ -350,6 +350,8 @@ object MemoryRepository {
     // ── screens ──────────────────────────────────────────────────────────
 
     fun observeDueBetween(start: Long, end: Long) = dao.observeDueBetween(start, end)
+    fun observeCapturedBetween(start: Long, end: Long) = dao.observeCapturedBetween(start, end)
+    fun observeCountCapturedBetween(start: Long, end: Long) = dao.observeCountCapturedBetween(start, end)
     fun observeCountDueBetween(start: Long, end: Long) = dao.observeCountDueBetween(start, end)
     fun observeOpenCommitments() = dao.observeOpenCommitments()
     fun observeAllMemories(limit: Int = 300) = dao.observeAllMemories(limit)

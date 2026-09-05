@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.knoxx.dailyflow.data.Direction
 import com.knoxx.dailyflow.data.MemoryEntity
 import com.knoxx.dailyflow.ui.CategoryTag
 import com.knoxx.dailyflow.ui.DateLabels
@@ -312,7 +313,17 @@ fun TimelineRow(
                 Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(11.dp)
             ) {
-                Checkbox(memory.commitmentDone, colors.dot, onToggle)
+                // Only obligations get a checkbox. The timeline is the whole
+                // day now, not only things with deadlines, so most rows are
+                // things that merely happened — "Prince shared a LinkedIn
+                // profile link" is not something the owner can complete, and
+                // offering a tickbox against it invites them to treat their
+                // own day as a to-do list they are failing at.
+                if (Direction.parse(memory.direction).isObligation) {
+                    Checkbox(memory.commitmentDone, colors.dot, onToggle)
+                } else {
+                    Box(Modifier.size(22.dp))
+                }
                 Column(Modifier.weight(1f)) {
                     Text(
                         memory.summary.orEmpty(),
@@ -355,22 +366,17 @@ private fun Attribution(memory: MemoryEntity, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         val person = memory.personName
-        if (person != null) {
-            PersonAvatar(person, size = 18.dp)
-            Text(
-                "From $person",
-                style = MaterialTheme.typography.bodySmall,
-                color = InkMuted,
-                fontWeight = FontWeight(600)
-            )
-        } else {
-            Text(
-                "Added by you",
-                style = MaterialTheme.typography.bodySmall,
-                color = InkMuted,
-                fontWeight = FontWeight(600)
-            )
-        }
+        if (person != null) PersonAvatar(person, size = 18.dp)
+        Text(
+            // Was hardcoded to "Added by you" whenever no person was
+            // identified, which labelled a Gmail message the user had never
+            // touched as something they had typed themselves. Direction
+            // already knows the four cases; only MANUAL is "Added by you".
+            Direction.parse(memory.direction).label(person),
+            style = MaterialTheme.typography.bodySmall,
+            color = InkMuted,
+            fontWeight = FontWeight(600)
+        )
         Box(Modifier.size(3.dp).clip(CircleShape).background(InkDisabled))
         SourceBadge(memory.packageName.ifBlank { null })
     }

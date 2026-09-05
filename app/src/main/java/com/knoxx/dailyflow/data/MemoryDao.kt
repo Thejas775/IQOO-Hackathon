@@ -110,6 +110,30 @@ interface MemoryDao {
     )
     fun observeDueBetween(start: Long, end: Long): Flow<List<MemoryEntity>>
 
+    /**
+     * Memories from a day, by when they were captured.
+     *
+     * The timeline used observeDueBetween, which only ever showed memories
+     * carrying a deadline. Measured on a real device: 17 memories, 2 with a
+     * dueAt, 1 due today — so the day's timeline showed one row out of
+     * seventeen, and everything the app understood about the day was invisible
+     * unless the model had also found a date in it.
+     *
+     * A timeline of the day is what happened, not what is scheduled. Deadlines
+     * still drive the commitments list and the reminders.
+     */
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND summary IS NOT NULL " +
+            "AND timestamp >= :start AND timestamp < :end ORDER BY timestamp ASC"
+    )
+    fun observeCapturedBetween(start: Long, end: Long): Flow<List<MemoryEntity>>
+
+    @Query(
+        "SELECT COUNT(*) FROM memories WHERE isLoop = 1 AND summary IS NOT NULL " +
+            "AND timestamp >= :start AND timestamp < :end"
+    )
+    fun observeCountCapturedBetween(start: Long, end: Long): Flow<Int>
+
     @Query("SELECT COUNT(*) FROM memories WHERE isLoop = 1 AND dueAt >= :start AND dueAt < :end")
     fun observeCountDueBetween(start: Long, end: Long): Flow<Int>
 

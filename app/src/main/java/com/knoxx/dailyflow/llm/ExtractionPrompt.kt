@@ -264,12 +264,32 @@ object ExtractionPrompt {
                 "a question awaiting an answer, or a concrete plan."
         )
         appendLine(
-            "Not worth remembering: adverts, app chrome, navigation, notification spam, small " +
-                "talk with no content, or a list of messages with nothing new in it."
+            "NOT worth remembering: adverts and offers, promotions, donation appeals, app " +
+                "chrome, navigation, notification spam, someone reacting to a message, a photo " +
+                "or sticker with no words, and small talk. For these set isLoop false and leave " +
+                "summary empty."
         )
         appendLine(
-            "When genuinely unsure, prefer to record it. A low-value memory costs the owner a " +
-                "glance; a missed one costs them the thing itself."
+            // Real output from a batch that had been told the above and still
+            // stored all three. The rule needed to be about the *shape* of the
+            // sentence, not only the category, because "X shared a link" reads
+            // like a fact about the day while carrying nothing to act on or
+            // recall.
+            "In particular, the fact that a message exists is not a memory. \"Utsav just " +
+                "messaged you\", \"Prince shared a LinkedIn profile link\" and \"message from " +
+                "Amma with a photo\" are all worth nothing: they describe an event without its " +
+                "content. Record what was said or asked, not that something arrived. If you " +
+                "cannot say what it was about, set isLoop false."
+        )
+        appendLine(
+            // The single-screen prompt says to record when unsure, which is
+            // right there: one doubtful memory costs a glance. In a batch it
+            // compounds — the model fills every slot rather than leaving four
+            // of five empty, and a real session produced five adverts and
+            // "message from Amma with a photo" alongside three real items.
+            "Most screens are not worth remembering, and a batch where only one or two have " +
+                "anything in them is the normal case. Do not write a summary just to fill the " +
+                "array."
         )
         appendLine()
 
@@ -295,6 +315,16 @@ object ExtractionPrompt {
             "- due is yyyy-MM-ddTHH:mm:ss resolved against that screen's CAPTURED AT. If only a " +
                 "date is stated, use 00:00:00 and the app will apply a sensible hour. Never " +
                 "invent a time that was not said."
+        )
+        appendLine(
+            // Batched replies were dropping dates that were sitting in the
+            // text: "Axis Bank bill 1544.0 due on Sep 2" came back with an
+            // empty due, so no reminder could ever fire for it. The date has
+            // to be lifted out of the sentence, not left inside it.
+            "- If the summary mentions a date or a deadline, due MUST contain it. \"due on Sep " +
+                "2\", \"by Friday\", \"tomorrow at 8:45\" and \"within 25 days\" are all dates: " +
+                "resolve each against CAPTURED AT. A summary naming a deadline with an empty " +
+                "due is wrong."
         )
         appendLine(
             "- completes is the number of a STILL OPEN item that this screen shows is now " +

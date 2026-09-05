@@ -60,9 +60,19 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
     private val yesterday = MemoryRepository.dayBounds(-1)
     private val tomorrow = MemoryRepository.dayBounds(1)
 
+    /**
+     * Yesterday and today count what was *captured*; tomorrow counts what is
+     * *due*.
+     *
+     * That asymmetry is deliberate rather than sloppy. Nothing is ever captured
+     * in the future, so a "tomorrow" tile counting captures would always read
+     * zero; and a "today" tile counting deadlines read 1 when the app had
+     * understood 17 things about the day, because only two memories carried a
+     * date at all. Past days are a record, tomorrow is a forecast.
+     */
     private val counts = combine(
-        MemoryRepository.observeCountDueBetween(yesterday.first, yesterday.second),
-        MemoryRepository.observeCountDueBetween(today.first, today.second),
+        MemoryRepository.observeCountCapturedBetween(yesterday.first, yesterday.second),
+        MemoryRepository.observeCountCapturedBetween(today.first, today.second),
         MemoryRepository.observeCountDueBetween(tomorrow.first, tomorrow.second),
         MemoryRepository.observeKeptBetween(today.first, today.second),
         ::DayCounts
@@ -70,7 +80,11 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
 
     private val lists = combine(
         MemoryRepository.observeOpenCommitments(),
-        MemoryRepository.observeDueBetween(today.first, today.second),
+        // The day's timeline is what happened, by capture time — not what is
+        // scheduled. Keyed on dueAt it showed 1 row out of 17 memories,
+        // because only two of them carried a date. Deadlines still drive the
+        // commitments list and the reminders, which is where they belong.
+        MemoryRepository.observeCapturedBetween(today.first, today.second),
         MemoryRepository.observeDistinctPeople()
     ) { open, timeline, people -> Triple(open, timeline, people) }
 
