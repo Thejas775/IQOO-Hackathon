@@ -64,7 +64,9 @@ object MemoryRepository {
      * "is this new" is the dedup gates' job, not an arbitrary wait.
      */
     private const val DEBOUNCE_MS = 3_000L
-    private const val DEBOUNCED_EVENT_TYPE = "TYPE_VIEW_TEXT_CHANGED"
+    /** A notification is one discrete event, not a stream of frames, and a
+     *  second one from the same app must not cancel the first. */
+    private const val NOTIFICATION_EVENT_TYPE = "NOTIFICATION"
     private val pendingByPackage = ConcurrentHashMap<String, Job>()
 
     /**
@@ -119,14 +121,26 @@ object MemoryRepository {
     fun enqueue(capture: Capture) {
         if (capture.text.isBlank()) return
 
-        if (capture.eventType == DEBOUNCED_EVENT_TYPE) {
+        // Everything except a notification is debounced per app.
+        //
+        // Only TYPE_VIEW_TEXT_CHANGED used to be, which missed the actual
+        // firehose: TYPE_WINDOW_CONTENT_CHANGED fires on every frame of a
+        // scroll. Measured over eight minutes of ordinary use, 1,318 events
+        // reached the dedup gates — about 165 a minute. At roughly eight
+        // seconds of inference per surviving row, the extractor cannot get
+        // near that, so the queue would only ever grow.
+        //
+        // A screen is worth reading once it settles, not while it moves, so
+        // the burst collapses to its last frame. Dedup then becomes a
+        // safety net rather than the thing holding back a flood.
+        if (capture.eventType == NOTIFICATION_EVENT_TYPE) {
+            scope.launch { process(capture) }
+        } else {
             pendingByPackage[capture.packageName]?.cancel()
             pendingByPackage[capture.packageName] = scope.launch {
                 delay(DEBOUNCE_MS)
                 process(capture)
             }
-        } else {
-            scope.launch { process(capture) }
         }
     }
 
