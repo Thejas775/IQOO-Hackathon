@@ -67,6 +67,9 @@ fun TodayScreen(
     onAddTask: () -> Unit,
     onOpenAsk: () -> Unit,
     onManageMemory: () -> Unit,
+    briefText: String?,
+    onPlayBrief: () -> Unit,
+    onDraftFollowUp: (MemoryEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -82,7 +85,9 @@ fun TodayScreen(
             MorningBrief(
                 state = state,
                 onAsk = onOpenAsk,
-                modifier = Modifier.padding(top = 14.dp)
+                modifier = Modifier.padding(top = 14.dp),
+                briefText = briefText,
+                onPlay = onPlayBrief
             )
         }
 
@@ -97,7 +102,8 @@ fun TodayScreen(
                 CommitmentCard(
                     memory = memory,
                     onDone = { onToggleDone(memory) },
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp)
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp),
+                    onDraftFollowUp = { onDraftFollowUp(memory) }
                 )
             }
         }

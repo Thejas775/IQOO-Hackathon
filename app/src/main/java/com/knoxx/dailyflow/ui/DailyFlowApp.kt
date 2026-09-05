@@ -38,6 +38,7 @@ import com.knoxx.dailyflow.ui.person.PersonViewModel
 import com.knoxx.dailyflow.ui.theme.Ink
 import com.knoxx.dailyflow.ui.theme.InkSecondary
 import com.knoxx.dailyflow.ui.theme.Paper
+import com.knoxx.dailyflow.ui.today.DraftSheet
 import com.knoxx.dailyflow.ui.today.TodayScreen
 import com.knoxx.dailyflow.ui.today.TodayViewModel
 import com.knoxx.dailyflow.ui.you.YouScreen
@@ -87,14 +88,31 @@ fun DailyFlowApp() {
                 Tab.Today -> {
                     val vm: TodayViewModel = viewModel()
                     val state by vm.state.collectAsState()
+                    val brief by vm.brief.collectAsState()
+                    val draft by vm.draft.collectAsState()
+                    val speaker = rememberSpeaker()
+
+                    // Keyed on the timeline so the brief is generated once the
+                    // day's data has actually arrived, and regenerated if it
+                    // changes — not on every recomposition, which would queue
+                    // an inference behind every frame.
+                    LaunchedEffect(state.timeline) { vm.generateBriefIfNeeded(state.timeline) }
+
                     TodayScreen(
                         state = state,
                         onToggleDone = vm::toggleDone,
                         onOpenPerson = { openPerson = it },
                         onAddTask = { showAdd = true },
                         onOpenAsk = { tab = Tab.Ask },
-                        onManageMemory = { tab = Tab.You }
+                        onManageMemory = { tab = Tab.You },
+                        briefText = brief,
+                        // Speaks whatever the card is showing, generated or
+                        // fallback, so the button is never a dead control.
+                        onPlayBrief = { speaker.speak(brief ?: state.spokenFallback()) },
+                        onDraftFollowUp = vm::draftFollowUp
                     )
+
+                    draft?.let { DraftSheet(it, onDismiss = vm::dismissDraft) }
                 }
 
                 Tab.Calendar -> {

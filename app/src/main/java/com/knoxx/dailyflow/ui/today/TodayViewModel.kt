@@ -5,9 +5,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.knoxx.dailyflow.data.MemoryEntity
 import com.knoxx.dailyflow.data.MemoryRepository
+import com.knoxx.dailyflow.llm.BriefGenerator
 import com.knoxx.dailyflow.ui.DateLabels
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -29,7 +33,18 @@ data class TodayState(
     val people: List<String> = emptyList(),
     val memoryCount: Int = 0,
     val pendingCount: Int = 0
-)
+) {
+    /** What "Play brief" reads aloud when no generated brief exists yet.
+     *  Kept in sync with the card's own fallback so the spoken and written
+     *  versions never disagree. */
+    fun spokenFallback(): String = when {
+        openCommitments.isEmpty() && counts.today == 0 ->
+            "Nothing is due today. Your memory is clear."
+        openCommitments.size == 1 -> "One promise is still open today."
+        openCommitments.isEmpty() -> "${counts.today} on the calendar today, and nothing outstanding."
+        else -> "${openCommitments.size} promises are still open today."
+    }
+}
 
 class TodayViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -90,4 +105,52 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
             MemoryRepository.setDone(memory.id, !memory.commitmentDone)
         }
     }
+
+    // ── generated text ───────────────────────────────────────────────────
+
+    private val _brief = MutableStateFlow<String?>(null)
+    val brief: StateFlow<String?> = _brief.asStateFlow()
+
+    private val _draft = MutableStateFlow<DraftState?>(null)
+    val draft: StateFlow<DraftState?> = _draft.asStateFlow()
+
+    private var briefJob: Job? = null
+
+    /**
+     * Generated once per app open, not on every recomposition, and only when
+     * there is something to summarise. It costs a full inference and blocks
+     * the single engine lock, so regenerating it while the user is reading
+     * would make the rest of the app feel stalled for no benefit.
+     */
+    fun generateBriefIfNeeded(todays: List<MemoryEntity>) {
+        if (_brief.value != null || briefJob?.isActive == true || todays.isEmpty()) return
+        briefJob = viewModelScope.launch {
+            _brief.value = BriefGenerator.morningBrief(getApplication(), todays)
+        }
+    }
+
+    fun draftFollowUp(memory: MemoryEntity) {
+        if (_draft.value?.generating == true) return
+        _draft.value = DraftState(memory = memory, generating = true)
+        viewModelScope.launch {
+            val text = BriefGenerator.draftFollowUp(getApplication(), memory)
+            _draft.value = DraftState(
+                memory = memory,
+                generating = false,
+                // Null means the model was unavailable or produced nothing.
+                // Said plainly rather than shown as an empty sheet.
+                text = text ?: "Couldn't draft that offline just now."
+            )
+        }
+    }
+
+    fun dismissDraft() {
+        _draft.value = null
+    }
 }
+
+data class DraftState(
+    val memory: MemoryEntity,
+    val generating: Boolean,
+    val text: String = ""
+)
