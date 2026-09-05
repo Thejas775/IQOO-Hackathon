@@ -121,6 +121,102 @@ These were all found by audit and are **not** to be reproduced.
 
 ---
 
+## 5b. Vision / image input — researched 2026-09-05
+
+**Gemma 4 is natively multimodal** (text, vision, audio). LiteRT-LM loads the image and audio encoders on demand, so declaring a vision backend costs nothing on text-only turns.
+
+**API:**
+```kotlin
+EngineConfig(modelPath, backend, visionBackend = Backend.GPU(), audioBackend = ...)
+conversation.sendMessageAsync(Contents.of(
+    Content.ImageFile("/path/to.jpg"),   // or Content.ImageBytes(byteArray)
+    Content.Text("Describe this image."),
+))
+```
+Image goes **before** the text — Gemma's multimodal template expects the image to precede the text referring to it.
+
+**⚠️ The critical finding — `litert-lm#2056`:** with `visionBackend = Backend.CPU()`, Gemma 4 E4B deterministically SIGSEGVs in native `memmove` on the **second image turn** of a conversation. Reported on Snapdragon 8 Elite / Adreno 830 — this project's exact target class of device. **`visionBackend = Backend.GPU()` eliminates it entirely.**
+
+DailyFlow defends twice over:
+1. The init ladder is `GPU/GPU → CPU-main/GPU-vision → CPU/CPU`. Vision stays on GPU even when the main model falls back, because the fix is independent of the main backend. CPU vision is the last rung and the UI warns when it's active.
+2. The conversation is reset after every run, so every image turn is the *first* of its conversation — the crash needs a second one.
+
+**Which files support vision:** only the `-web` build is documented as text-only. Both `gemma-4-E4B-it-gpu.litertlm` and `gemma-4-E4B-it.litertlm` should carry the encoder.
+
+**Related open issue:** `#1874` — the Kotlin API lacks custom `PromptTemplate` support, described as "blocking Gemma 4 multimodal functionality." If image answers come back as nonsense rather than failing outright, look here first; the CLI path uses an explicit `<start_of_image>` token.
+
+### Larger Gemma 4 models — researched, ruled out for Android
+
+**Only E2B and E4B are Android models.** Both cards state "ready for deployment on Android, iOS, Desktop, IoT and Web." The larger three do not, and 12B has a *hard technical block*, not just a missing claim:
+
+**`litert-lm#2461` — Gemma 4 12B fails to load on Android, both backends:**
+- **CPU is refused outright.** The model's metadata sets `section_backend_constraint: gpu` on the `tf_lite_prefill_decode` section, so CPU loading returns `INVALID_ARGUMENT`. You cannot trade speed for memory.
+- **GPU hits a per-allocation ceiling.** It requests a ~2.1 GB single allocation; Android OpenCL drivers commonly cap *per-allocation* at 1 GiB. The reporter had **16 GB of system RAM and it still failed** — this is a driver limit, so more RAM does not help.
+- Unresolved, no maintainer response.
+
+Also: 12B requires LiteRT-LM ≥ 0.17 (we're on 0.11.0), is a 5.99 GB download, and wants ~7.3–7.9 GB of GPU memory.
+
+`26B-A4B` (15.8 GB, ~15 GB GPU) and `31B` (19.2 GB, ~19.6 GB GPU) are currently **web-only** — their cards say "ready for deployment on web" with wider platform support "to come."
+
+**Conclusion: E4B is the ceiling on this hardware.** Not a compromise — the ceiling.
+
+### Official Android benchmarks (targets to compare our numbers against)
+
+Google's own figures, S26 Ultra, 1024 prefill / 256 decode tokens, 2048 context:
+
+| Model | Backend | Prefill tok/s | Decode tok/s | TTFT | Model MB | Mem MB |
+|---|---|---:|---:|---:|---:|---:|
+| E4B | GPU | 1,293 | **22.1** | 0.8 s | 3,654 | 710 |
+| E4B | CPU | 195 | 17.7 | 5.3 s | 3,654 | 3,283 |
+| E2B | CPU | 557 | **46.9** | 1.8 s | 2,583 | 1,733 |
+
+If our Elite Gen 5 GPU numbers land far below ~22 tok/s decode on E4B, something is misconfigured — most likely a silent fall back to CPU. Note GPU uses *less* CPU memory (710 MB vs 3,283 MB), since weights stay memory-mapped on the GPU side.
+
+### Other litert-community models worth knowing about
+
+Relevant to DailyFlow's later phases:
+
+- **`embeddinggemma-300m`** — a proper on-device embedding model, and the drop-in fix for Wick's dedup failure (see below).
+- **`FunctionGemma_270M_Mobile_Actions`** — a 270M model fine-tuned for mobile action/function calling. Directly relevant if the AutoPilot layer gets built.
+- **`PaddleOCR-VL-1.6`** — a dedicated OCR vision-language model, if Gemma's own OCR proves weak on dense documents.
+- Also present: Gemma3 1B/4B, `gemma-3-270m-it`, Qwen3 0.6B/4B, Phi-4-mini, FastVLM-0.5B, SmolVLM-256M, TranslateGemma-4B.
+
+---
+
+## 5c. Embeddings — what Wick used, and what to use instead
+
+**Wick used MediaPipe Tasks `TextEmbedder`** (`com.google.mediapipe:tasks-text:1.0.0`) with a bundled asset `bert_embedder.tflite` (26,142,232 bytes). Wick's own comment describes it as MobileBERT-based.
+
+That model **no longer appears in MediaPipe's Text Embedder documentation.** The current lineup is:
+
+| Model | File | Quantization | CPU latency (S26 Ultra, 4 threads) | Input |
+|---|---|---|---|---|
+| **EmbeddingGemma 300M** | `embedding_gemma.task` | int4+int8 mixed | 200 ms | 512 tokens |
+| Universal Sentence Encoder | `universal_sentence_encoder.tflite` | float32 | 10 ms | 3 strings |
+
+**Why this matters — and the precise finding.** The embedder was *not* abandoned wholesale. Wick uses it successfully on **raw screen text**, and rejected it only for **summary text**:
+
+| Layer | Where | Method | Verdict |
+|---|---|---|---|
+| 1. Raw-log repeat | `LogRepository.record` | exact joined-text repeat per package (no time bound) + 2 s min write interval | raw JSONL only, not the memory pipeline |
+| 2. Burst debounce | `MemoryRepository.enqueue` | 3 s, **`TYPE_VIEW_TEXT_CHANGED` only**, per package | scoped deliberately — a blanket debounce across all event types let only 4 rows survive from ~160 captures in 18 min |
+| 3. Exact text | `processCapture` | `hasRecentExactText`, 24 h window, per package, **persisted in Room** not in-memory | works |
+| 4. **Semantic, raw text** | `processCapture` | cosine ≥ **0.95** vs recent embeddings, same package, 24 h | **embeddings used here, and they work** |
+| 5. Model-side | `GeminiExtractionClient` prompt | 50 recent summaries passed as context, model marks dupes `isLoop=false` | works |
+| 6. **Summary text** | `isDuplicateOfExistingMemory` | **normalized string equality** — lowercase, strip `[.,!?;:'"]`, collapse whitespace | **embeddings rejected here** |
+
+The 0.9975 failure was at **layer 6 only**. Long raw screen dumps carry enough distinguishing content for a weak embedder; short template-shaped sentences (Gemini's summaries all open "You noted…", "You promised…", "You agreed…") do not. Wick's comment is explicit that this was a measured decision, not a guess, and that false negatives were the acceptable tradeoff — better to show a paraphrased duplicate than to hide a genuinely distinct memory.
+
+**So EmbeddingGemma's target is layer 6**, where a real sentence-similarity model would work and MobileBERT couldn't. Layer 4 is fine as-is.
+
+**Also carry forward a performance caveat:** layer 4 loads *every* recent embedding for that package and deserializes each BLOB on every capture — O(n) per event, in-app, on the IO dispatcher. Fine at Wick's volume; worth an index or a cap if capture rate rises.
+
+**EmbeddingGemma 300M is trained for exactly this** — retrieval, semantic similarity, classification, clustering — and is served through the **same `TextEmbedder` API**, so the swap is an asset change plus an options tweak, not a rewrite. At 200 ms CPU it is ~20× slower than USE, which is irrelevant for a background dedup pass.
+
+Use EmbeddingGemma when the dedup layer gets built. Do not re-adopt `bert_embedder.tflite`.
+
+---
+
 ## 6. The extraction problem (important)
 
 Wick's `ExtractionWorker` batches **20 snippets × up to 3000 chars**, plus 50 existing summaries as context, and demands a strict JSON array back via Gemini's `responseSchema`.
