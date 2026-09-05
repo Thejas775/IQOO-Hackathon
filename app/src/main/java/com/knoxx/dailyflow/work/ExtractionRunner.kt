@@ -167,7 +167,35 @@ object ExtractionRunner {
                     return
                 }
 
-                apply(row, ExtractionParser.parse(reply, row.rawText))
+                // One screen can hold several people's messages. The first
+                // result updates the captured row; each further one becomes a
+                // row of its own so it can carry its own person and deadline.
+                val results = ExtractionParser.parseAll(reply, row.rawText)
+                apply(row, results.first())
+
+                results.drop(1).forEach { extra ->
+                    val summary = extra.summary ?: return@forEach
+                    if (MemoryRepository.hasSimilarSummary(summary)) {
+                        DebugLog.log("extract", "row ${row.id} extra duplicate, dropped :: $summary")
+                        return@forEach
+                    }
+                    val id = MemoryRepository.addDerived(
+                        parent = row,
+                        summary = summary,
+                        sourceQuote = extra.sourceQuote,
+                        direction = extra.direction.name,
+                        dueAt = extra.dueAt,
+                        dueAtExplicit = extra.dueAtExplicit,
+                        personName = extra.person,
+                        category = extra.category,
+                        projectName = extra.project
+                    )
+                    extra.dueAt?.let { ReminderScheduler.schedule(app, id, it) }
+                    DebugLog.log(
+                        "extract",
+                        "row ${row.id} extra -> id=$id person=${extra.person} :: $summary"
+                    )
+                }
 
                 _progress.value = Progress(running = true, done = done, total = pending.size)
                 onProgress(done, pending.size)

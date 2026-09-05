@@ -44,6 +44,40 @@ object ExtractionParser {
 
     private val CATEGORIES = setOf("Work", "Personal", "Home", "Other")
 
+    /**
+     * Every memory on one screen, not just the first.
+     *
+     * A chat list holds several people's messages at once, and taking one of
+     * them threw the rest away — the largest source of missed content in the
+     * app. The prompt asks for one block per item separated by `---`, and each
+     * block is parsed by the same [parse] that handles a single reply, so a
+     * malformed block costs one item rather than the screen.
+     *
+     * Blocks that yield nothing are dropped, except that the first result is
+     * always returned even when empty: the caller needs a verdict for the
+     * capture row itself, and "nothing here" is a verdict.
+     */
+    fun parseAll(raw: String?, sourceText: String): List<Extraction> {
+        if (raw.isNullOrBlank()) return listOf(Extraction(isMemory = false))
+
+        val blocks = raw.split(BLOCK_SEPARATOR)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        val parsed = blocks.map { parse(it, sourceText) }
+        val memories = parsed.filter { it.isMemory || it.completesIndex != null }
+
+        // Deduped within the screen: asked for one block per person, a model
+        // will sometimes emit the same item twice under slightly different
+        // wording, and both would become separate rows the user has to read.
+        val seen = mutableSetOf<String>()
+        val unique = memories.filter { seen.add(it.summary.orEmpty().lowercase(Locale.US)) }
+
+        return unique.ifEmpty { listOf(parsed.firstOrNull() ?: Extraction(isMemory = false)) }
+    }
+
+    private val BLOCK_SEPARATOR = Regex("(?m)^\\s*-{3,}\\s*$")
+
     fun parse(raw: String?, sourceText: String): Extraction {
         if (raw.isNullOrBlank()) return Extraction(isMemory = false)
 

@@ -90,34 +90,46 @@ object ExtractionPrompt {
                 "or sticker with no words, and small talk."
         )
         appendLine(
-            // Real output from a session that had been told the above and still
-            // stored all three. The rule had to be about the *shape* of the
-            // sentence rather than the category: "X shared a link" reads like a
-            // fact about the day while carrying nothing to act on or recall.
-            "In particular, the fact that a message exists is not a memory. \"Utsav just " +
-                "messaged you\", \"Prince shared a LinkedIn profile link\" and \"message from " +
-                "Amma with a photo\" are all worth nothing: they describe an event without its " +
-                "content. Record what was said or asked, not that something arrived. If you " +
-                "cannot say what it was about, answer no."
+            // Narrowed from "the fact that a message exists is not a memory",
+            // which was too blunt. "Prince shared a LinkedIn profile link" and
+            // "Shreya sent a link to DailyFlow Hackathon Redesign.zip" have the
+            // same shape and only one is noise; the earlier rule killed both,
+            // and with them every chat-list screen. What separates them is
+            // whether the thing itself is named.
+            "An event with nothing in it is not a memory: \"Utsav just messaged you\" or " +
+                "\"message from Amma with a photo\" say only that something arrived. But an " +
+                "event that names what arrived is worth keeping — \"Shreya sent the " +
+                "DailyFlow Redesign zip\" is a memory. Record the thing, not the notification."
         )
         appendLine(
-            // The counterweight to the rule above, and it belongs here in a way
-            // it did not in the batched prompt. Batching created its own
-            // pressure to record — the model filled five array slots rather
-            // than leaving four empty — so that prompt was told most screens
-            // are worth nothing. Carrying that line over to a single screen
-            // judged alone removed the pressure and kept the correction:
-            // measured 1 memory from 14 screens, against 3 from 7 before.
-            //
-            // Judging one screen on its own merits, the original lean is the
-            // right one. A low-value memory costs the owner a glance; a missed
-            // one costs them the thing itself.
+            // Batching created its own pressure to record, so that prompt was
+            // told most screens are worth nothing. Carried over to a single
+            // screen judged alone, that removed the pressure and kept the
+            // correction: measured 1 memory from 14 screens against 3 from 7.
+            // A low-value memory costs the owner a glance; a missed one costs
+            // them the thing itself.
             "When genuinely unsure, prefer to record it. What you must not do is invent content " +
                 "for a screen that has none."
         )
         appendLine()
 
-        appendLine("Reply with EXACTLY these nine lines, in this order, and nothing else:")
+        appendLine(
+            // The change that matters most on a chat list. A WhatsApp inbox
+            // holds ten people's messages at once, and asking for one memory
+            // meant taking whichever the model picked and discarding the other
+            // nine — the single largest source of missed content in the app.
+            "A screen may hold SEVERAL things worth remembering, from several different people. " +
+                "A messages list or an inbox usually does. Give one block for EACH of them, " +
+                "separated by a line containing only ---, and repeat the nine lines in every " +
+                "block. Do not merge two people into one block."
+        )
+        appendLine(
+            "One block per person or per item. If the screen holds only one, give one block. If " +
+                "it holds nothing, give one block with ISLOOP: no."
+        )
+        appendLine()
+
+        appendLine("Each block is EXACTLY these nine lines, in this order, and nothing else:")
         appendLine()
         appendLine("ISLOOP: yes or no")
         appendLine("SUMMARY: one sentence addressed to \"you\", or empty if ISLOOP is no")

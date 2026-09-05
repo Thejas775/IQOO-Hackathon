@@ -303,6 +303,49 @@ object MemoryRepository {
         )
     )
 
+    /**
+     * A second, third or fourth memory found on one captured screen.
+     *
+     * A chat list is not one thing. A WhatsApp inbox holds ten people's
+     * messages at once, and the pipeline used to take one of them and discard
+     * the rest — a screen showing Shreya, Nathan and Amma produced a single
+     * memory naming whichever the model happened to pick. The capture row
+     * carries the first, and each further item becomes its own row so it can
+     * have its own person, direction, category and deadline.
+     *
+     * The raw text is copied from the parent rather than left blank, so quote
+     * verification and the dedup gates keep working against the screen these
+     * actually came from.
+     */
+    suspend fun addDerived(
+        parent: MemoryEntity,
+        summary: String,
+        sourceQuote: String?,
+        direction: String?,
+        dueAt: Long?,
+        dueAtExplicit: Boolean,
+        personName: String?,
+        category: String?,
+        projectName: String?
+    ): Long = dao.insert(
+        MemoryEntity(
+            timestamp = parent.timestamp,
+            packageName = parent.packageName,
+            rawText = parent.rawText,
+            eventType = parent.eventType,
+            extracted = true,
+            isLoop = true,
+            summary = summary,
+            sourceQuote = sourceQuote,
+            direction = direction,
+            dueAt = dueAt,
+            dueAtExplicit = dueAtExplicit,
+            personName = personName,
+            category = category,
+            projectName = projectName
+        )
+    )
+
     // ── pipeline ─────────────────────────────────────────────────────────
 
     suspend fun pendingExtraction(): List<MemoryEntity> = dao.getPendingExtraction()
