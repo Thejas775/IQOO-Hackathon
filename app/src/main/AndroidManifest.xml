@@ -41,10 +41,6 @@
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libvndksupport.so" android:required="false" />
 
-        <!-- Lets the system camera app write a captured photo into our cache.
-             Note the app deliberately does NOT declare the CAMERA permission:
-             ACTION_IMAGE_CAPTURE needs no grant unless the manifest asks for
-             it, so staying silent keeps the flow permission-free. -->
         <!--
             The capture service. Guarded by BIND_ACCESSIBILITY_SERVICE so only
             the system can bind to it, and exported because the system is a
@@ -64,11 +60,12 @@
         </service>
 
         <!--
-            Catches messages that arrive and are never opened -- the case where
-            a commitment is most likely to be forgotten, and invisible to the
-            accessibility service because that only sees an app while it is on
+            Catches messages that arrive and are never opened, which is where a
+            commitment is most likely to be forgotten and is invisible to the
+            accessibility service, since that only sees an app while it is on
             screen. Its own separate grant, so enabling screen capture does not
             silently enable this too.
+            (No double hyphens in here: XML forbids them inside a comment.)
         -->
         <service
             android:name=".capture.NotificationCaptureService"

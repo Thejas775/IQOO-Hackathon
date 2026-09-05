@@ -67,6 +67,8 @@ fun TodayScreen(
     onAddTask: () -> Unit,
     onOpenAsk: () -> Unit,
     onManageMemory: () -> Unit,
+    modelMissing: Boolean,
+    onGetModel: () -> Unit,
     briefText: String?,
     onPlayBrief: () -> Unit,
     onDraftFollowUp: (MemoryEntity) -> Unit,
@@ -80,6 +82,9 @@ fun TodayScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         item { Header(state) }
+        if (modelMissing) {
+            item { ModelBanner(onGetModel, Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp)) }
+        }
         item { CountRow(state.counts, Modifier.padding(top = 18.dp)) }
         item {
             MorningBrief(
@@ -172,6 +177,40 @@ private fun Header(state: TodayState) {
             contentAlignment = Alignment.Center
         ) {
             Text("A", style = MaterialTheme.typography.labelLarge, color = Violet, fontWeight = FontWeight(700))
+        }
+    }
+}
+
+/**
+ * Persistent way back to the download once the sheet has been dismissed.
+ *
+ * Without the model the app records everything and understands none of it, and
+ * the only visible symptom is an empty Today — which reads as broken rather
+ * than as unfinished setup. This says which it is.
+ */
+@Composable
+private fun ModelBanner(onGetModel: () -> Unit, modifier: Modifier = Modifier) {
+    SunkenPanel(modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Gemma isn't installed yet",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Ink
+                )
+                Text(
+                    "Screens are being captured, but nothing can be understood until the " +
+                        "model is on this device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSecondary,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
+            }
+            PrimaryChip("Get it", onClick = onGetModel)
         }
     }
 }

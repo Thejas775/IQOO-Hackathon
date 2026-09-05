@@ -35,6 +35,8 @@ import com.knoxx.dailyflow.ui.ask.AskViewModel
 import com.knoxx.dailyflow.ui.calendar.CalendarScreen
 import com.knoxx.dailyflow.ui.calendar.CalendarViewModel
 import com.knoxx.dailyflow.ui.person.PersonScreen
+import com.knoxx.dailyflow.ui.model.ModelSetupSheet
+import com.knoxx.dailyflow.ui.model.ModelSetupViewModel
 import com.knoxx.dailyflow.ui.person.PersonViewModel
 import com.knoxx.dailyflow.ui.theme.Ink
 import com.knoxx.dailyflow.ui.theme.InkSecondary
@@ -58,7 +60,24 @@ fun DailyFlowApp() {
     var tab by remember { mutableStateOf(Tab.Today) }
     var openPerson by remember { mutableStateOf<String?>(null) }
     var showAdd by remember { mutableStateOf(false) }
+    var showModelSetup by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    val modelVm: ModelSetupViewModel = viewModel()
+    val modelState by modelVm.state.collectAsState()
+
+    // Offered unprompted the first time the app opens without a model.
+    // Without it the app is inert — capture still records screens, nothing is
+    // ever understood, and the only clue is a permanently empty Today. Shown
+    // once per launch rather than on every recomposition so it can be
+    // dismissed and the app still used.
+    var promptedForModel by remember { mutableStateOf(false) }
+    LaunchedEffect(modelState.installed) {
+        if (!modelState.installed && !promptedForModel) {
+            promptedForModel = true
+            showModelSetup = true
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(Paper)) {
 
@@ -106,6 +125,8 @@ fun DailyFlowApp() {
                         onAddTask = { showAdd = true },
                         onOpenAsk = { tab = Tab.Ask },
                         onManageMemory = { tab = Tab.You },
+                        modelMissing = !modelState.installed,
+                        onGetModel = { showModelSetup = true },
                         briefText = brief,
                         // Speaks whatever the card is showing, generated or
                         // fallback, so the button is never a dead control.
@@ -175,5 +196,16 @@ fun DailyFlowApp() {
 
     if (showAdd) {
         AddTaskSheet(scope = scope, onDismiss = { showAdd = false })
+    }
+
+    if (showModelSetup) {
+        ModelSetupSheet(
+            state = modelState,
+            onSelect = modelVm::select,
+            onDownload = modelVm::download,
+            onCancel = modelVm::cancel,
+            onDiscardPartial = modelVm::discardPartial,
+            onDismiss = { showModelSetup = false }
+        )
     }
 }

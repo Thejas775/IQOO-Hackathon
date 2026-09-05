@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.knoxx.dailyflow.data.MemoryEntity
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.llm.BriefGenerator
+import com.knoxx.dailyflow.llm.GemmaEngine
 import com.knoxx.dailyflow.ui.DateLabels
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
