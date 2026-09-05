@@ -1,7 +1,6 @@
 package com.knoxx.dailyflow.llm
 
 import android.content.Context
-import com.knoxx.dailyflow.data.FloatArrayConverter
 import com.knoxx.dailyflow.data.MemoryEntity
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.ml.EmbeddingEngine
@@ -11,14 +10,17 @@ import kotlin.math.sqrt
 /**
  * Finds the memories a question is about.
  *
- * Two strategies, chosen by what is actually on the device. With the embedding
- * model present, candidates are ranked by cosine similarity against the
- * question. Without it, retrieval falls back to keyword overlap.
+ * Two strategies, chosen by how good the installed embedder is. Ranking by
+ * cosine similarity needs a model that can tell two short summaries apart,
+ * and the bundled MobileBERT demonstrably cannot — Wick measured it scoring
+ * unrelated one-sentence summaries at 0.9975. So the vector path is used only
+ * when a real retrieval model has been sideloaded, and otherwise retrieval
+ * falls back to keyword overlap.
  *
- * The fallback exists because Ask must work on a phone where only the main
- * model was installed. It is genuinely worse — it cannot match "what did I
- * promise Rahul" to a summary phrased "you agreed to send the quotation" —
- * but a weaker answer beats a screen that refuses to answer at all.
+ * The fallback is genuinely worse — it cannot match "what did I promise
+ * Rahul" to a summary phrased "you agreed to send the quotation" — but a
+ * weaker answer beats a confidently wrong one, which is what ranking on a
+ * model that scores everything at 0.99 would produce.
  */
 object MemorySearch {
 
@@ -37,22 +39,32 @@ object MemorySearch {
         val candidates = MemoryRepository.retrievalCandidates()
         if (candidates.isEmpty()) return emptyList()
 
-        val queryVector = EmbeddingEngine.embed(context, question)
+        // Only when the embedder is good enough to rank on. The bundled
+        // MobileBERT is not — see EmbeddingEngine.supportsRetrieval.
+        val queryVector = if (EmbeddingEngine.supportsRetrieval(context)) {
+            EmbeddingEngine.embed(context, question)
+        } else {
+            null
+        }
         return if (queryVector != null) {
-            rankByVector(queryVector, candidates)
+            rankByVector(queryVector, EmbeddingEngine.modelId(context), candidates)
         } else {
             rankByKeyword(question, candidates)
         }
     }
 
-    private fun rankByVector(query: FloatArray, candidates: List<MemoryEntity>): List<Hit> =
+    private fun rankByVector(
+        query: FloatArray,
+        modelId: String,
+        candidates: List<MemoryEntity>
+    ): List<Hit> =
         candidates.asSequence()
             .mapNotNull { memory ->
                 // Vectors from a different model are not comparable. Skipping
                 // them is why embeddingModel is stored: otherwise a model
                 // change silently scores every old row at zero and quietly
                 // removes the user's history from search.
-                if (memory.embeddingModel != EmbeddingEngine.MODEL_ID) return@mapNotNull null
+                if (memory.embeddingModel != modelId) return@mapNotNull null
                 val stored = memory.embedding ?: return@mapNotNull null
                 Hit(memory, cosine(query, stored))
             }

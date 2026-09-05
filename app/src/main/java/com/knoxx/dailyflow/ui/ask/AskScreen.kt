@@ -89,7 +89,7 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
         val context = getApplication<Application>()
         _state.value = _state.value.copy(
             modelReady = GemmaEngine.isModelAvailable(context),
-            usingVectorSearch = EmbeddingEngine.isAvailable(context)
+            usingVectorSearch = EmbeddingEngine.supportsRetrieval(context)
         )
     }
 

@@ -33,6 +33,13 @@ secrets.properties
 *.bin
 *.part
 
+# ...with one deliberate exception. The MobileBERT embedder is 26 MB and is
+# bundled in the APK rather than downloaded, so it has to be in the repo: a
+# fresh clone without it builds an app whose dedup and retrieval silently
+# degrade, with no error to explain why. Small enough that git handles it
+# fine, unlike the multi-GB weights above.
+!app/src/main/assets/bert_embedder.tflite
+
 # Supabase CLI local state (may contain project link/session info)
 supabase/.temp/
 supabase/.branches/

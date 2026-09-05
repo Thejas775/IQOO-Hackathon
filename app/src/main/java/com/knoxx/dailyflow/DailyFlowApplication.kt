@@ -27,10 +27,10 @@ class DailyFlowApplication : Application() {
         CapturePreferences.init(this)
         CaptureStats.init(this)
 
-        // Cheap and lazy: the embedder is a few hundred megabytes at most and
+        // Cheap and lazy: the embedder is a 26 MB model bundled in the APK and
         // only loads on first use, so wiring it here costs nothing until
         // something actually asks for a vector.
-        MemoryRepository.setEmbedder(EmbeddingEngine.MODEL_ID) { text ->
+        MemoryRepository.setEmbedder(EmbeddingEngine.modelId(this)) { text ->
             EmbeddingEngine.embed(this, text)
         }
 
