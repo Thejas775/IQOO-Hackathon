@@ -24,7 +24,11 @@ data class GenerationStats(
     val decodeMs: Long,
     /** Send → last emission. */
     val totalMs: Long,
-    val backend: BackendChoice
+    val backend: BackendChoice,
+    /** Whether this turn included an image. Image turns carry hundreds of extra
+     *  prefill tokens from the vision encoder, so their TTFT is not comparable
+     *  to a text-only turn's — the UI keeps the two averaged separately. */
+    val hadImage: Boolean = false
 ) {
     /**
      * The headline number. Excludes prefill, and uses tokens-1 because the

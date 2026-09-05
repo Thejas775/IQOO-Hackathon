@@ -19,55 +19,77 @@ enum class BackendChoice { GPU, CPU }
 /**
  * Thin wrapper over LiteRT-LM. One engine, one conversation at a time — the
  * runtime doesn't support multiple concurrent sessions per engine.
+ *
+ * Gemma 4 is natively multimodal; the vision encoder is loaded on demand, so
+ * declaring [EngineConfig.visionBackend] costs nothing on text-only turns.
  */
 class InferenceEngine(private val context: Context) {
 
     private var engine: Engine? = null
     private var conversation: Conversation? = null
 
-    /** Which backend the *currently loaded* engine is actually running on.
-     *  May differ from what was requested if GPU init failed and we fell back. */
+    /** Which backend the *currently loaded* engine runs on. May differ from
+     *  what was requested if GPU init failed and we fell back. */
     var activeBackend: BackendChoice? = null
+        private set
+
+    /** Which backend the vision encoder runs on. See the ladder in [initialize]
+     *  — CPU here is a known-crashy last resort, and the UI warns about it. */
+    var activeVisionBackend: BackendChoice? = null
         private set
 
     val isReady: Boolean get() = conversation != null
 
     /**
-     * Loads [modelPath] on [preferred], falling back to CPU if GPU init fails.
+     * Loads [modelPath], degrading through a ladder of backend combinations.
      *
-     * Note the fallback wraps `Engine(...)` and `initialize()`, not just the
-     * config construction. EngineConfig is an inert value object — building one
-     * with an unsupported backend never throws. The failure only surfaces when
-     * the native engine actually initializes, so a try/catch around config
-     * construction alone is dead code that never fires, and the app reports a
-     * hard load failure on exactly the devices the fallback existed to rescue.
+     * The ladder puts vision on the GPU even when the main backend has fallen
+     * back to CPU, and that ordering is deliberate. With
+     * `visionBackend = Backend.CPU()`, Gemma 4 E4B deterministically SIGSEGVs
+     * in native `memmove` on the *second* image turn of a conversation —
+     * reported on Snapdragon 8 Elite / Adreno, which is this project's target
+     * class of device (google-ai-edge/litert-lm#2056). Moving only the vision
+     * encoder to GPU eliminates it, independent of the main backend. So
+     * CPU-main + GPU-vision is strictly better than falling back on both.
      *
-     * Returns the backend that actually loaded.
+     * Returns the backend the main model actually loaded on.
      */
     suspend fun initialize(modelPath: String, preferred: BackendChoice): BackendChoice =
         withContext(Dispatchers.IO) {
             close()
 
-            if (preferred == BackendChoice.GPU) {
+            val ladder = buildList {
+                if (preferred == BackendChoice.GPU) {
+                    add(BackendChoice.GPU to BackendChoice.GPU)
+                }
+                add(BackendChoice.CPU to BackendChoice.GPU)
+                add(BackendChoice.CPU to BackendChoice.CPU)
+            }
+
+            var lastFailure: Throwable? = null
+            for ((main, vision) in ladder) {
                 try {
-                    load(modelPath, Backend.GPU())
-                    activeBackend = BackendChoice.GPU
-                    return@withContext BackendChoice.GPU
+                    load(modelPath, main, vision)
+                    activeBackend = main
+                    activeVisionBackend = vision
+                    if (vision == BackendChoice.CPU) {
+                        Log.w(TAG, "Vision running on CPU — known unstable across image turns")
+                    }
+                    return@withContext main
                 } catch (t: Throwable) {
-                    Log.w(TAG, "GPU backend failed to initialize, falling back to CPU", t)
+                    Log.w(TAG, "Init failed for main=$main vision=$vision", t)
+                    lastFailure = t
                     close()
                 }
             }
-
-            load(modelPath, Backend.CPU())
-            activeBackend = BackendChoice.CPU
-            BackendChoice.CPU
+            throw lastFailure ?: IllegalStateException("Engine failed to initialize")
         }
 
-    private fun load(modelPath: String, backend: Backend) {
+    private fun load(modelPath: String, main: BackendChoice, vision: BackendChoice) {
         val config = EngineConfig(
             modelPath = modelPath,
-            backend = backend,
+            backend = main.toBackend(),
+            visionBackend = vision.toBackend(),
             cacheDir = context.cacheDir.path
         )
         val e = Engine(config)
@@ -76,22 +98,41 @@ class InferenceEngine(private val context: Context) {
         conversation = e.createConversation()
     }
 
+    private fun BackendChoice.toBackend(): Backend =
+        if (this == BackendChoice.GPU) Backend.GPU() else Backend.CPU()
+
     /**
-     * Streams the reply as incremental text deltas.
+     * Streams the reply as incremental text deltas. Pass [imagePath] to send a
+     * picture alongside the prompt.
      *
-     * Not marked suspend: the caller collects this and timestamps each emission
-     * itself, which is how TTFT and decode rate get measured. Doing the timing
-     * in here would mean the numbers include collector-side delays.
+     * The image goes first in [Contents.of]: Gemma's multimodal template
+     * expects the image to precede the text that refers to it, and reversing
+     * them produces answers that ignore the picture.
+     *
+     * Not marked suspend — the caller collects this and timestamps each
+     * emission itself, which is how TTFT and decode rate get measured. Timing
+     * in here would fold collector-side delay into the numbers.
      */
-    fun chatStream(userMessage: String): Flow<String> {
+    fun chatStream(userMessage: String, imagePath: String? = null): Flow<String> {
         val conv = conversation ?: error("Engine not initialized")
-        return conv.sendMessageAsync(Contents.of(Content.Text(userMessage)))
+        val contents = if (imagePath != null) {
+            Contents.of(Content.ImageFile(imagePath), Content.Text(userMessage))
+        } else {
+            Contents.of(Content.Text(userMessage))
+        }
+        return conv.sendMessageAsync(contents)
             .map { it.toString() }
             .flowOn(Dispatchers.IO)
     }
 
-    /** Fresh conversation, same loaded engine — resets context between runs so
-     *  one benchmark's history doesn't inflate the next one's prefill cost. */
+    /**
+     * Fresh conversation, same loaded engine.
+     *
+     * Doubles as a safety net for #2056: that crash needs a *second* image turn
+     * within one conversation, so resetting after every run means every image
+     * turn is the first of its conversation. Belt and braces alongside the
+     * GPU vision backend.
+     */
     fun resetConversation() {
         val e = engine ?: return
         closeConversation()
@@ -116,6 +157,7 @@ class InferenceEngine(private val context: Context) {
         }
         engine = null
         activeBackend = null
+        activeVisionBackend = null
     }
 
     private companion object {

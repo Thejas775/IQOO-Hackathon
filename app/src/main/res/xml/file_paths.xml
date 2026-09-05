@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Grants the system camera app write access to the one cache subdirectory
+     photos land in. Scoped to cache/camera rather than the whole cache dir so
+     nothing else the app stores there is exposed along with it. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="camera" path="camera/" />
+</paths>

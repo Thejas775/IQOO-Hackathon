@@ -24,6 +24,20 @@
         <uses-native-library android:name="libOpenCL.so" android:required="false" />
         <uses-native-library android:name="libvndksupport.so" android:required="false" />
 
+        <!-- Lets the system camera app write a captured photo into our cache.
+             Note the app deliberately does NOT declare the CAMERA permission:
+             ACTION_IMAGE_CAPTURE needs no grant unless the manifest asks for
+             it, so staying silent keeps the flow permission-free. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

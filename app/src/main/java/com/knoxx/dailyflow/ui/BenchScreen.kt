@@ -1,5 +1,11 @@
 package com.knoxx.dailyflow.ui
 
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,7 +28,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -36,6 +48,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -48,6 +64,7 @@ import com.knoxx.dailyflow.llm.BackendChoice
 import com.knoxx.dailyflow.llm.GenerationStats
 import com.knoxx.dailyflow.llm.ModelCatalog
 import com.knoxx.dailyflow.llm.ModelSpec
+import com.knoxx.dailyflow.vision.CameraCapture
 
 @Composable
 fun BenchScreen(
@@ -61,6 +78,8 @@ fun BenchScreen(
     onStartDownload: () -> Unit,
     onCancelDownload: () -> Unit,
     onDiscardPartial: () -> Unit,
+    onAttachImage: (Uri) -> Unit,
+    onClearImage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -106,7 +125,7 @@ fun BenchScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                     )
                 }
-                Composer(state.isGenerating, onSend, onStop)
+                Composer(state, onSend, onStop, onAttachImage, onClearImage)
             }
         }
     }
@@ -158,6 +177,18 @@ private fun HeaderBar(
                 }
             }
 
+            // CPU vision is the last rung of the init ladder and is known to
+            // SIGSEGV across image turns (litert-lm#2056). Say so rather than
+            // letting it look like a random native crash later.
+            if (state.activeVisionBackend == BackendChoice.CPU) {
+                Text(
+                    "Vision is on CPU — image turns may be unstable",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+
             if (state.runs.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 SessionSummary(state)
@@ -176,6 +207,15 @@ private fun SessionSummary(state: BenchUiState) {
             "tok/s"
         )
         Metric("runs", "${state.runs.size}", "")
+    }
+    if (state.imageRuns.isNotEmpty()) {
+        Text(
+            "vision prefill %d ms · text prefill %d ms"
+                .format(state.meanImageTtftMs, state.meanTextTtftMs),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
     if (state.runs.size == 1) {
         Text(
@@ -234,6 +274,10 @@ private fun TranscriptList(messages: List<ChatMessage>, modifier: Modifier = Mod
 @Composable
 private fun MessageRow(message: ChatMessage) {
     Column(Modifier.fillMaxWidth()) {
+        message.imagePath?.let {
+            ThumbnailImage(it, size = 140.dp)
+            Spacer(Modifier.height(6.dp))
+        }
         Surface(
             color = if (message.isUser) MaterialTheme.colorScheme.primaryContainer
             else MaterialTheme.colorScheme.surfaceVariant,
@@ -253,8 +297,15 @@ private fun MessageRow(message: ChatMessage) {
 @Composable
 private fun StatsRow(s: GenerationStats) {
     Text(
-        text = "%.1f tok/s decode · %d ms to first token · %d tok · %.0f char/s · %s"
-            .format(s.decodeTokensPerSec, s.ttftMs, s.tokens, s.charsPerSec, s.backend.name),
+        text = "%.1f tok/s decode · %d ms to first token%s · %d tok · %.0f char/s · %s"
+            .format(
+                s.decodeTokensPerSec,
+                s.ttftMs,
+                if (s.hadImage) " (vision)" else "",
+                s.tokens,
+                s.charsPerSec,
+                s.backend.name
+            ),
         style = MaterialTheme.typography.labelSmall,
         fontFamily = FontFamily.Monospace,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -263,36 +314,162 @@ private fun StatsRow(s: GenerationStats) {
 }
 
 @Composable
-private fun Composer(isGenerating: Boolean, onSend: (String) -> Unit, onStop: () -> Unit) {
+private fun Composer(
+    state: BenchUiState,
+    onSend: (String) -> Unit,
+    onStop: () -> Unit,
+    onAttachImage: (Uri) -> Unit,
+    onClearImage: () -> Unit
+) {
     var text by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val isGenerating = state.isGenerating
+
+    // Held across the launcher round trip: TakePicture only reports success,
+    // it doesn't hand back the URI it wrote to.
+    var pendingCaptureUri by remember { mutableStateOf<Uri?>(null) }
+
+    val takePicture = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { success ->
+        pendingCaptureUri?.let { if (success) onAttachImage(it) }
+        pendingCaptureUri = null
+    }
+
+    val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> uri?.let(onAttachImage) }
+
+    fun submit() {
+        if (text.isNotBlank() || state.attachedImagePath != null) {
+            onSend(text)
+            text = ""
+        }
+    }
 
     Surface(tonalElevation = 3.dp) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Prompt") },
-                enabled = !isGenerating,
-                maxLines = 4,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = {
-                    if (text.isNotBlank()) { onSend(text); text = "" }
-                })
-            )
-            if (isGenerating) {
-                Button(onClick = onStop) { Text("Stop") }
-            } else {
-                Button(
-                    onClick = { if (text.isNotBlank()) { onSend(text); text = "" } },
-                    enabled = text.isNotBlank()
-                ) { Text("Send") }
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+
+            state.attachedImagePath?.let { path ->
+                AttachedImagePreview(path, onClearImage)
+                Spacer(Modifier.height(8.dp))
+                // One-tap prompts for the two things this is actually for.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QuickPrompt("Describe") { onSend("Describe this image in detail."); text = "" }
+                    QuickPrompt("Read the text") {
+                        onSend(
+                            "Transcribe all text visible in this image, exactly as written, " +
+                                "preserving line breaks. Output only the text."
+                        )
+                        text = ""
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            if (state.isPreparingImage) {
+                Text(
+                    "Preparing image…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
+
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                IconButton(
+                    enabled = !isGenerating,
+                    onClick = {
+                        val uri = CameraCapture.newCaptureUri(context)
+                        pendingCaptureUri = uri
+                        takePicture.launch(uri)
+                    }
+                ) { Icon(Icons.Default.PhotoCamera, contentDescription = "Take a photo") }
+
+                IconButton(
+                    enabled = !isGenerating,
+                    onClick = {
+                        pickImage.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                ) { Icon(Icons.Default.Image, contentDescription = "Pick an image") }
+
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = {
+                        Text(if (state.attachedImagePath != null) "Ask about the image" else "Prompt")
+                    },
+                    enabled = !isGenerating,
+                    maxLines = 4,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { submit() })
+                )
+
+                if (isGenerating) {
+                    Button(onClick = onStop) { Text("Stop") }
+                } else {
+                    Button(
+                        onClick = { submit() },
+                        enabled = text.isNotBlank() || state.attachedImagePath != null
+                    ) { Text("Send") }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun QuickPrompt(label: String, onClick: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(20.dp),
+        onClick = onClick
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun AttachedImagePreview(path: String, onClear: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ThumbnailImage(path, size = 64.dp)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            "Image attached",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onClear) { Text("Remove") }
+    }
+}
+
+/**
+ * Decodes straight off disk rather than pulling in an image-loading library.
+ * Safe here because [ImagePrep] has already capped the file at 1024px on its
+ * longest edge, so this is a small, fast decode — and it's cached by [remember]
+ * against the path, so it happens once per image rather than per recomposition.
+ */
+@Composable
+private fun ThumbnailImage(path: String, size: androidx.compose.ui.unit.Dp) {
+    val bitmap = remember(path) { BitmapFactory.decodeFile(path)?.asImageBitmap() }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(size).clip(RoundedCornerShape(8.dp))
+        )
     }
 }
 

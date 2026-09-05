@@ -35,6 +35,8 @@ class MainActivity : ComponentActivity() {
                         onStartDownload = vm::startDownload,
                         onCancelDownload = vm::cancelDownload,
                         onDiscardPartial = vm::discardPartial,
+                        onAttachImage = vm::attachImage,
+                        onClearImage = vm::clearAttachedImage,
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
