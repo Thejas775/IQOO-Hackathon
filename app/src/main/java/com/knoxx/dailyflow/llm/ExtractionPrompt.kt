@@ -33,7 +33,8 @@ object ExtractionPrompt {
         packageName: String,
         capturedAt: Long,
         rawText: String,
-        knownPeople: List<String>
+        knownPeople: List<String>,
+        openCommitments: List<Pair<Long, String>> = emptyList()
     ): String = buildString {
         appendLine(
             "You are DailyFlow, a private memory that runs entirely on one person's phone. " +
@@ -50,6 +51,18 @@ object ExtractionPrompt {
             // spelling of recurring names without stopping the model
             // recognising someone new.
             appendLine("PEOPLE ALREADY KNOWN: ${knownPeople.take(20).joinToString(", ")}")
+        }
+        if (openCommitments.isNotEmpty()) {
+            // Numbered rather than given by database id: a small model asked
+            // to echo a six-digit id gets a digit wrong often enough to matter,
+            // and a wrong id would tick off an unrelated commitment. A short
+            // ordinal it can only get right or obviously wrong is safer, and
+            // the caller maps it back.
+            appendLine()
+            appendLine("STILL OPEN (the owner has not finished these yet):")
+            openCommitments.forEachIndexed { index, (_, summary) ->
+                appendLine("${index + 1}. $summary")
+            }
         }
         appendLine()
 
@@ -69,7 +82,7 @@ object ExtractionPrompt {
         )
         appendLine()
 
-        appendLine("Reply with EXACTLY these eight lines, in this order, and nothing else:")
+        appendLine("Reply with EXACTLY these nine lines, in this order, and nothing else:")
         appendLine()
         appendLine("ISLOOP: yes or no")
         appendLine("SUMMARY: one sentence addressed to \"you\", or empty if ISLOOP is no")
@@ -79,6 +92,7 @@ object ExtractionPrompt {
         appendLine("CATEGORY: Work, Personal, Home, or Other")
         appendLine("DUE: yyyy-MM-ddTHH:mm:ss if there is a real deadline, or empty")
         appendLine("PROJECT: a named ongoing effort this belongs to, or empty")
+        appendLine("COMPLETES: the number of one STILL OPEN item this screen shows is now finished, or empty")
         appendLine()
 
         appendLine("Rules:")
@@ -101,7 +115,13 @@ object ExtractionPrompt {
             "- PROJECT: only when the screen names one or clearly continues one. An invented " +
                 "project name is worse than none."
         )
-        appendLine("- If ISLOOP is no, leave SUMMARY, QUOTE, PERSON, DUE and PROJECT empty.")
+        appendLine(
+            "- COMPLETES: only when this screen is direct evidence the item is finished — it was " +
+                "paid, sent, delivered, confirmed or explicitly called done. Someone merely " +
+                "discussing it, promising it again, or asking about it is not completion. Leave " +
+                "empty unless you are sure, and never give more than one number."
+        )
+        appendLine("- If ISLOOP is no, leave SUMMARY, QUOTE, PERSON, DUE and PROJECT empty. COMPLETES is independent: a screen can be worth remembering or not, and still show something was finished.")
         appendLine()
 
         appendLine("SCREEN TEXT:")

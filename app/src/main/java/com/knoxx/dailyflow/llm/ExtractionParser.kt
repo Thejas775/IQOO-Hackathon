@@ -14,7 +14,12 @@ data class Extraction(
     val category: String? = null,
     val dueAt: Long? = null,
     val dueAtExplicit: Boolean = false,
-    val project: String? = null
+    val project: String? = null,
+
+    /** 1-based position in the STILL OPEN list the prompt supplied, when the
+     *  screen showed that item was finished. Independent of [isMemory]: a
+     *  receipt is often not worth remembering and still completes something. */
+    val completesIndex: Int? = null
 )
 
 /**
@@ -63,8 +68,15 @@ object ExtractionParser {
         // they will write a well-formed, on-topic summary and still answer
         // "no" on the flag, contradicting themselves. Producing the sentence
         // is the stronger evidence of intent than the boolean beside it.
+        // Parsed before the isMemory gate, because a screen that is not worth
+        // remembering can still be the evidence that something else is done.
+        val completes = fields["COMPLETES"].cleanOrNull()
+            ?.filter { it.isDigit() }
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+
         val isMemory = summary != null
-        if (!isMemory) return Extraction(isMemory = false)
+        if (!isMemory) return Extraction(isMemory = false, completesIndex = completes)
 
         val due = ExtractionPrompt.parseDue(fields["DUE"].cleanOrNull())
         // A date with no time parses as midnight. That distinction is the
@@ -83,12 +95,14 @@ object ExtractionParser {
                 ?.takeIf { it in CATEGORIES },
             dueAt = due?.let(::applyNineAmIfMidnight),
             dueAtExplicit = statedATime,
-            project = fields["PROJECT"].cleanOrNull()?.take(60)
+            project = fields["PROJECT"].cleanOrNull()?.take(60),
+            completesIndex = completes
         )
     }
 
     private val KNOWN_KEYS = setOf(
-        "ISLOOP", "SUMMARY", "QUOTE", "DIRECTION", "PERSON", "CATEGORY", "DUE", "PROJECT"
+        "ISLOOP", "SUMMARY", "QUOTE", "DIRECTION", "PERSON", "CATEGORY", "DUE", "PROJECT",
+        "COMPLETES"
     )
 
     private fun String?.cleanOrNull(): String? {

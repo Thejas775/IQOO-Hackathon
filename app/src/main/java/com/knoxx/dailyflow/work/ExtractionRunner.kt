@@ -77,13 +77,19 @@ object ExtractionRunner {
         var done = 0
         try {
             val people = MemoryRepository.recentPeople()
+            // Fetched once and then maintained in place. Re-querying per row
+            // would be a database round trip per inference, and a row ticked
+            // off earlier in this same pass must not be offered again.
+            val open = MemoryRepository.openCommitments().mapNotNull { memory ->
+                memory.summary?.let { memory.id to it }
+            }.toMutableList()
 
             for (row in pending) {
                 if (!currentCoroutineContext().isActive) break
 
                 val reply = GemmaEngine.complete(
                     app,
-                    ExtractionPrompt.build(row.packageName, row.timestamp, row.rawText, people)
+                    ExtractionPrompt.build(row.packageName, row.timestamp, row.rawText, people, open)
                 )
 
                 if (reply == null) {
@@ -105,6 +111,23 @@ object ExtractionRunner {
                         "due=${result.dueAt} explicit=${result.dueAtExplicit} " +
                         "person=${result.person} :: ${row.rawText.take(50).replace('\n', ' ')}"
                 )
+
+                // Auto-tick. Validated against the list actually sent rather
+                // than trusted: an out-of-range number is the expected failure
+                // mode for a small model asked for an ordinal, and acting on
+                // it would mark an unrelated commitment done — a silent,
+                // hard-to-notice wrong. Out of range is dropped, not clamped.
+                result.completesIndex?.let { index ->
+                    val target = open.getOrNull(index - 1)
+                    if (target == null) {
+                        DebugLog.log("autotick", "ignored out-of-range $index (open=${open.size})")
+                    } else {
+                        MemoryRepository.setDone(target.first, true)
+                        ReminderScheduler.cancel(app, target.first)
+                        open.removeAt(index - 1)
+                        DebugLog.log("autotick", "done id=${target.first} :: ${target.second}")
+                    }
+                }
                 if (result.isMemory) {
                     MemoryRepository.saveExtraction(
                         id = row.id,

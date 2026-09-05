@@ -77,6 +77,11 @@ object MemoryRepository {
      *  every candidate here is a BLOB that must be deserialised. */
     private const val RECENT_EMBEDDING_SCAN = 200
 
+    /** How many open commitments the extraction prompt is shown. Small: they
+     *  are prefill on every captured screen, and a long list makes the model
+     *  likelier to match one loosely. */
+    private const val OPEN_COMMITMENT_PROMPT_LIMIT = 12
+
     /** Candidate pool handed to Ask before similarity ranking. */
     private const val RETRIEVAL_POOL = 500
 
@@ -275,6 +280,7 @@ object MemoryRepository {
     fun observeApproximateBytes() = dao.observeApproximateBytes()
 
     suspend fun setDone(id: Long, done: Boolean) = dao.setCommitmentDone(id, done)
+    suspend fun openCommitments(limit: Int = OPEN_COMMITMENT_PROMPT_LIMIT) = dao.getOpenCommitments(limit)
     suspend fun pendingReminders() = dao.getPendingReminders()
     suspend fun markReminderSent(id: Long) = dao.markReminderSent(id)
 

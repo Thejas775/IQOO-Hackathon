@@ -107,6 +107,16 @@ interface MemoryDao {
     )
     fun observeOpenCommitments(): Flow<List<MemoryEntity>>
 
+    /** The same set as [observeOpenCommitments], fetched once for the
+     *  extraction prompt. Bounded because every one of these is prefill paid
+     *  on every captured screen in the pass. */
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND commitmentDone = 0 " +
+            "AND direction IN ('SELF_PROMISE', 'THEY_ASKED') " +
+            "AND summary IS NOT NULL ORDER BY dueAt ASC LIMIT :limit"
+    )
+    suspend fun getOpenCommitments(limit: Int): List<MemoryEntity>
+
     @Query(
         "SELECT COUNT(*) FROM memories WHERE isLoop = 1 AND commitmentDone = 1 " +
             "AND dueAt >= :start AND dueAt < :end"
