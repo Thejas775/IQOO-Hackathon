@@ -67,6 +67,10 @@ object ExtractionParser {
         if (!isMemory) return Extraction(isMemory = false)
 
         val due = ExtractionPrompt.parseDue(fields["DUE"].cleanOrNull())
+        // A date with no time parses as midnight. That distinction is the
+        // difference between "3pm on Friday" and "sometime Friday", and it
+        // has to be captured before the 9 AM anchor below erases it.
+        val statedATime = due != null && !isMidnight(due)
 
         return Extraction(
             isMemory = true,
@@ -78,7 +82,7 @@ object ExtractionParser {
                 ?.replaceFirstChar { it.uppercase() }
                 ?.takeIf { it in CATEGORIES },
             dueAt = due?.let(::applyNineAmIfMidnight),
-            dueAtExplicit = due != null,
+            dueAtExplicit = statedATime,
             project = fields["PROJECT"].cleanOrNull()?.take(60)
         )
     }
@@ -118,19 +122,29 @@ object ExtractionParser {
 
     private val WHITESPACE = Regex("\\s+")
 
+    /** A date stated with no time of day parses as exactly midnight. That is
+     *  the signal for "no time given", and callers need it before the 9 AM
+     *  anchor below overwrites it. */
+    private fun isMidnight(millis: Long): Boolean {
+        val cal = Calendar.getInstance().apply { timeInMillis = millis }
+        return cal.get(Calendar.HOUR_OF_DAY) == 0 &&
+            cal.get(Calendar.MINUTE) == 0 &&
+            cal.get(Calendar.SECOND) == 0
+    }
+
     /**
      * The prompt asks for 00:00:00 when only a date was stated. Left as
      * midnight, every dateless deadline would fire a reminder in the middle of
      * the night, so it is re-anchored to 9 AM local — using the parsed
      * calendar fields directly rather than shifting by an offset, which could
      * move the date itself across a boundary.
+     *
+     * This is a reminder time, not a known one. dueAtExplicit records that, so
+     * the timeline can avoid printing 9 AM as if the user had said it.
      */
     private fun applyNineAmIfMidnight(millis: Long): Long {
+        if (!isMidnight(millis)) return millis
         val cal = Calendar.getInstance().apply { timeInMillis = millis }
-        val isMidnight = cal.get(Calendar.HOUR_OF_DAY) == 0 &&
-            cal.get(Calendar.MINUTE) == 0 &&
-            cal.get(Calendar.SECOND) == 0
-        if (!isMidnight) return millis
         cal.set(Calendar.HOUR_OF_DAY, 9)
         return cal.timeInMillis
     }

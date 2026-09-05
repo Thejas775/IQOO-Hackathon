@@ -274,7 +274,12 @@ fun TimelineRow(
     modifier: Modifier = Modifier
 ) {
     val colors = categoryColorsFor(memory.category)
-    val (time, meridiem) = memory.dueAt?.let { DateLabels.timelineTime(it) } ?: ("—" to "")
+    // A date with no stated time is stored as 9 AM so its reminder does not
+    // fire at midnight. That is a reminder time, not something the user said,
+    // and printing it put "9 AM" on every row of the timeline. When no time
+    // was given, show when the moment was actually captured instead.
+    val shownAt = if (memory.dueAtExplicit) memory.dueAt else memory.timestamp
+    val (time, meridiem) = shownAt?.let { DateLabels.timelineTime(it) } ?: ("—" to "")
 
     Row(
         modifier = modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp),
