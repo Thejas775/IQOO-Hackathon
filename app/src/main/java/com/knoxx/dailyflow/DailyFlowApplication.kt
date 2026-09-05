@@ -4,6 +4,7 @@ import android.app.Application
 import com.knoxx.dailyflow.data.CapturePreferences
 import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
+import com.knoxx.dailyflow.debug.DebugLog
 import com.knoxx.dailyflow.ml.EmbeddingEngine
 import com.knoxx.dailyflow.work.ExtractionNotification
 import com.knoxx.dailyflow.work.ExtractionScheduler
@@ -23,6 +24,7 @@ import com.knoxx.dailyflow.work.ExtractionScheduler
 class DailyFlowApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        DebugLog.init(this)
         MemoryRepository.init(this)
         CapturePreferences.init(this)
         CaptureStats.init(this)

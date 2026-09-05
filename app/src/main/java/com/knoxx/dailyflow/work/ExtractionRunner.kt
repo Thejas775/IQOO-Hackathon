@@ -3,6 +3,7 @@ package com.knoxx.dailyflow.work
 import android.content.Context
 import android.util.Log
 import com.knoxx.dailyflow.data.MemoryRepository
+import com.knoxx.dailyflow.debug.DebugLog
 import com.knoxx.dailyflow.llm.ExtractionParser
 import com.knoxx.dailyflow.llm.ExtractionPrompt
 import com.knoxx.dailyflow.llm.GemmaEngine
@@ -64,6 +65,7 @@ object ExtractionRunner {
             return
         }
 
+        DebugLog.log("extract", "pass start: ${pending.size} pending")
         _progress.value = Progress(running = true, total = pending.size)
         onProgress(0, pending.size)
 
@@ -94,6 +96,15 @@ object ExtractionRunner {
                 }
 
                 val result = ExtractionParser.parse(reply, row.rawText)
+                // The single most useful line in the trace: it pairs what was
+                // captured with what the model decided about it, which is the
+                // step every "why is that not in my day?" question lands on.
+                DebugLog.log(
+                    "extract",
+                    "row ${row.id} ${row.packageName} memory=${result.isMemory} " +
+                        "due=${result.dueAt} explicit=${result.dueAtExplicit} " +
+                        "person=${result.person} :: ${row.rawText.take(50).replace('\n', ' ')}"
+                )
                 if (result.isMemory) {
                     MemoryRepository.saveExtraction(
                         id = row.id,
@@ -127,6 +138,7 @@ object ExtractionRunner {
             // Always released, including on cancellation. Leaving several
             // gigabytes resident after the pass is what makes the process the
             // most attractive thing on the device to kill.
+            DebugLog.log("extract", "pass end: read $done of ${pending.size}")
             GemmaEngine.unpin()
             GemmaEngine.unload()
         }

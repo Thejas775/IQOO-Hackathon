@@ -4,6 +4,7 @@ import android.content.Context
 import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
+import com.knoxx.dailyflow.debug.DebugLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -115,10 +116,14 @@ object MemoryRepository {
 
     private suspend fun process(capture: Capture) {
         val since = capture.timestamp - DEDUP_WINDOW_MS
+        val preview = capture.text.take(60).replace('\n', ' ')
 
         // Gate 1 — exact text. Cheapest, and catches the common case of a
         // screen revisited unchanged.
-        if (dao.hasRecentExactText(capture.packageName, capture.text, since)) return
+        if (dao.hasRecentExactText(capture.packageName, capture.text, since)) {
+            DebugLog.log("capture", "drop exact-dup ${capture.packageName} :: $preview")
+            return
+        }
 
         // Gate 2 — meaning. Catches a screen where the substance is identical
         // but something incidental moved: a new unread badge, a relative
@@ -131,7 +136,10 @@ object MemoryRepository {
                 val other = FloatArrayConverter.toFloatArray(bytes)
                 if (other == null) 0f else cosineSimilarity(vector, other)
             } ?: 0f
-            if (closest >= SEMANTIC_THRESHOLD) return
+            if (closest >= SEMANTIC_THRESHOLD) {
+                DebugLog.log("capture", "drop near-dup ${capture.packageName} sim=$closest :: $preview")
+                return
+            }
         }
 
         dao.insert(
@@ -139,10 +147,15 @@ object MemoryRepository {
                 timestamp = capture.timestamp,
                 packageName = capture.packageName,
                 rawText = capture.text,
+                eventType = capture.eventType,
                 embedding = vector,
                 embeddingModel = if (vector != null) embedderId else null
             )
         )
+
+        // Logged with the route that produced it, so a gap in one source is
+        // visible as a gap rather than as "capture stopped".
+        DebugLog.log("capture", "kept ${capture.eventType} ${capture.packageName} :: $preview")
 
         // Signalled only after a row actually survived both gates, not on
         // every captured event — most captures are dropped, and waking the
@@ -181,6 +194,7 @@ object MemoryRepository {
             timestamp = System.currentTimeMillis(),
             packageName = "",
             rawText = title,
+            eventType = "MANUAL",
             extracted = true,
             isLoop = true,
             summary = title,

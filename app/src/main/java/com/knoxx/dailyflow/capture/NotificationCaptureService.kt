@@ -11,6 +11,7 @@ import com.knoxx.dailyflow.data.Capture
 import com.knoxx.dailyflow.data.CapturePreferences
 import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
+import com.knoxx.dailyflow.debug.DebugLog
 
 /**
  * Captures notifications as a second source alongside on-screen text.
@@ -39,7 +40,10 @@ class NotificationCaptureService : NotificationListenerService() {
 
         if (CapturePreferences.isPaused.value) return
         if (packageName == applicationContext.packageName) return
-        if (!CapturePreferences.isAllowed(packageName)) return
+        if (!CapturePreferences.isAllowed(packageName)) {
+            DebugLog.log("notify", "drop not-allowed $packageName")
+            return
+        }
 
         // Ongoing notifications are media players, downloads, navigation and
         // foreground-service badges. They update constantly, say nothing worth
@@ -61,7 +65,10 @@ class NotificationCaptureService : NotificationListenerService() {
         val text = listOfNotNull(title, body)
             .filter { it.isNotEmpty() }
             .joinToString(": ")
-        if (text.length < MIN_USEFUL_LENGTH) return
+        if (text.length < MIN_USEFUL_LENGTH) {
+            DebugLog.log("notify", "drop too-short $packageName :: $text")
+            return
+        }
 
         CaptureStats.recordEvent()
         MemoryRepository.enqueue(

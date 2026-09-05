@@ -7,6 +7,7 @@ import com.knoxx.dailyflow.data.Capture
 import com.knoxx.dailyflow.data.CapturePreferences
 import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
+import com.knoxx.dailyflow.debug.DebugLog
 
 /**
  * Watches on-screen text across other apps and hands each screen to
@@ -58,11 +59,17 @@ class CaptureService : AccessibilityService() {
         // minute, and its notification previews surfaced genuinely sensitive
         // content in Wick's audit — a full delivery address and an OTP-adjacent
         // message, readable while the phone was locked. Skip entirely.
-        if (keyguard?.isKeyguardLocked == true) return
+        if (keyguard?.isKeyguardLocked == true) {
+            DebugLog.log("capture", "drop locked")
+            return
+        }
 
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
-        if (!CapturePreferences.isAllowed(packageName)) return
+        if (!CapturePreferences.isAllowed(packageName)) {
+            DebugLog.log("capture", "drop not-allowed $packageName")
+            return
+        }
 
         val root = rootInActiveWindow ?: return
 
@@ -72,10 +79,16 @@ class CaptureService : AccessibilityService() {
         // name — confirmed in Wick's audit, where every event logged under a
         // banking app actually contained content from a social app. Trust only
         // the events where the two agree.
-        if (root.packageName?.toString() != packageName) return
+        if (root.packageName?.toString() != packageName) {
+            DebugLog.log("capture", "drop window-mismatch event=$packageName root=${root.packageName}")
+            return
+        }
 
         val extracted = NodeExtractor.extract(root)
-        if (extracted.text.isBlank()) return
+        if (extracted.text.isBlank()) {
+            DebugLog.log("capture", "drop empty-text $packageName")
+            return
+        }
 
         CaptureStats.recordEvent()
         MemoryRepository.enqueue(

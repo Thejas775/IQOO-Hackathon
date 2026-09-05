@@ -41,6 +41,17 @@ data class MemoryEntity(
     /** Flattened on-screen text. Never leaves the device. */
     val rawText: String,
 
+    /**
+     * Which capture route produced this row: "NOTIFICATION" from the listener,
+     * an accessibility event type from the screen reader, "MANUAL" when typed.
+     *
+     * Was previously carried on Capture for debounce only and then dropped on
+     * insert, which made notification-sourced rows indistinguishable from
+     * screen scrapes — so there was no way to tell which half of capture was
+     * misbehaving. Stored now precisely so that is answerable.
+     */
+    val eventType: String? = null,
+
     // ── on-device understanding ──────────────────────────────────────────
     val embedding: FloatArray? = null,
 
