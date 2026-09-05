@@ -2,8 +2,10 @@ package com.knoxx.dailyflow.work
 
 import android.content.Context
 import android.util.Log
+import com.knoxx.dailyflow.data.MemoryEntity
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.debug.DebugLog
+import com.knoxx.dailyflow.llm.Extraction
 import com.knoxx.dailyflow.llm.ExtractionParser
 import com.knoxx.dailyflow.llm.ExtractionPrompt
 import com.knoxx.dailyflow.llm.GemmaEngine
@@ -94,6 +96,72 @@ object ExtractionRunner {
                 memory.summary?.let { memory.id to it }
             }.toMutableList()
 
+            // Applies one screen's verdict. Local so it can update `done` and
+            // the live `open` list, both of which belong to this pass, and so
+            // the batch path and the retry path cannot drift apart.
+            suspend fun apply(row: MemoryEntity, parsed: Extraction) {
+                // The quote is checked here rather than in the parser, which
+                // has no way to know which screen each object came from.
+                // Unverified, a fabricated quote would be shown to the user as
+                // their own words.
+                val result = ExtractionParser.verifyQuoteAgainst(parsed, row.rawText)
+
+                DebugLog.log(
+                    "extract",
+                    "row ${row.id} ${row.packageName} memory=${result.isMemory} " +
+                        "due=${result.dueAt} explicit=${result.dueAtExplicit} " +
+                        "person=${result.person} :: ${row.rawText.take(50).replace('\n', ' ')}"
+                )
+
+                // Auto-tick. Validated against the list actually sent rather
+                // than trusted: an out-of-range number is the expected failure
+                // mode for a small model asked for an ordinal, and acting on it
+                // would mark an unrelated commitment done. Dropped, not clamped.
+                result.completesIndex?.let { index ->
+                    val target = open.getOrNull(index - 1)
+                    if (target == null) {
+                        DebugLog.log("autotick", "ignored out-of-range $index (open=${open.size})")
+                    } else {
+                        MemoryRepository.setDone(target.first, true)
+                        ReminderScheduler.cancel(app, target.first)
+                        open.removeAt(index - 1)
+                        DebugLog.log("autotick", "done id=${target.first} :: ${target.second}")
+                    }
+                }
+
+                if (result.isMemory) {
+                    MemoryRepository.saveExtraction(
+                        id = row.id,
+                        summary = result.summary,
+                        sourceQuote = result.sourceQuote,
+                        direction = result.direction,
+                        dueAt = result.dueAt,
+                        dueAtExplicit = result.dueAtExplicit,
+                        personName = result.person,
+                        category = result.category,
+                        projectName = result.project
+                    )
+                    // Scheduled only for rows that carry a deadline. A memory
+                    // with no due time is still worth keeping, but there is no
+                    // moment at which nudging about it is right.
+                    result.dueAt?.let { due ->
+                        ReminderScheduler.schedule(app, row.id, due)
+                    }
+                } else {
+                    MemoryRepository.markNotAMemory(row.id)
+                }
+
+                done++
+            }
+
+            // Rows a batch could not account for. They are retried one at a
+            // time below rather than left pending, because "left pending"
+            // turned out to mean "stranded forever": the next pass batches the
+            // same row with the same neighbours and the model skips it again.
+            // Observed on a real device — one row skipped in two consecutive
+            // passes, with the queue never reaching zero.
+            val stranded = mutableListOf<MemoryEntity>()
+
             for (batch in pending.chunked(BATCH_SIZE)) {
                 if (!currentCoroutineContext().isActive) break
 
@@ -117,82 +185,53 @@ object ExtractionRunner {
 
                 val results = ExtractionParser.parseJsonBatch(reply, batch.size)
                 if (results.isEmpty()) {
-                    // The whole batch is unreadable. Leaving these rows pending
-                    // is the only safe move — marking them "not a memory" would
-                    // discard real content because of a formatting failure.
-                    DebugLog.log("extract", "batch of ${batch.size} unparseable, left pending")
-                    Log.w(TAG, "Unparseable batch reply; ${batch.size} rows left pending")
+                    DebugLog.log("extract", "batch of ${batch.size} unparseable, retrying singly")
+                    Log.w(TAG, "Unparseable batch reply; retrying ${batch.size} rows singly")
+                    stranded += batch
                     continue
                 }
 
                 batch.forEachIndexed { indexInBatch, row ->
                     val parsed = results[indexInBatch + 1]
                     if (parsed == null) {
-                        // The model skipped this screen. Left pending rather
-                        // than guessed at — matching by position instead would
-                        // file one screen's summary against another's row.
                         DebugLog.log("extract", "row ${row.id} missing from batch reply")
-                        return@forEachIndexed
-                    }
-
-                    // The quote is checked here rather than in the parser,
-                    // which has no way to know which screen each object came
-                    // from. Unverified, a fabricated quote would be shown to
-                    // the user as their own words.
-                    val result = ExtractionParser.verifyQuoteAgainst(parsed, row.rawText)
-
-                    DebugLog.log(
-                        "extract",
-                        "row ${row.id} ${row.packageName} memory=${result.isMemory} " +
-                            "due=${result.dueAt} explicit=${result.dueAtExplicit} " +
-                            "person=${result.person} :: ${row.rawText.take(50).replace('\n', ' ')}"
-                    )
-
-                    // Auto-tick. Validated against the list actually sent
-                    // rather than trusted: an out-of-range number is the
-                    // expected failure mode for a small model asked for an
-                    // ordinal, and acting on it would mark an unrelated
-                    // commitment done. Out of range is dropped, not clamped.
-                    result.completesIndex?.let { index ->
-                        val target = open.getOrNull(index - 1)
-                        if (target == null) {
-                            DebugLog.log("autotick", "ignored out-of-range $index (open=${open.size})")
-                        } else {
-                            MemoryRepository.setDone(target.first, true)
-                            ReminderScheduler.cancel(app, target.first)
-                            open.removeAt(index - 1)
-                            DebugLog.log("autotick", "done id=${target.first} :: ${target.second}")
-                        }
-                    }
-
-                    if (result.isMemory) {
-                        MemoryRepository.saveExtraction(
-                            id = row.id,
-                            summary = result.summary,
-                            sourceQuote = result.sourceQuote,
-                            direction = result.direction,
-                            dueAt = result.dueAt,
-                            dueAtExplicit = result.dueAtExplicit,
-                            personName = result.person,
-                            category = result.category,
-                            projectName = result.project
-                        )
-                        // Scheduled only for rows that carry a deadline. A
-                        // memory with no due time is still worth keeping, but
-                        // there is no moment at which nudging about it is right.
-                        result.dueAt?.let { due ->
-                            ReminderScheduler.schedule(app, row.id, due)
-                        }
+                        stranded += row
                     } else {
-                        MemoryRepository.markNotAMemory(row.id)
+                        apply(row, parsed)
                     }
-
-                    done++
                 }
 
                 _progress.value = Progress(running = true, done = done, total = pending.size)
                 onProgress(done, pending.size)
             }
+
+            // The single-screen prompt is the fallback precisely because it is
+            // the simpler request: one screen, eight lines, no array to keep
+            // aligned. It costs an inference per row, which is the price of
+            // guaranteeing the queue drains.
+            if (stranded.isNotEmpty()) {
+                DebugLog.log("extract", "retrying ${stranded.size} stranded rows singly")
+                for (row in stranded) {
+                    if (!currentCoroutineContext().isActive) break
+                    val single = GemmaEngine.complete(
+                        app,
+                        ExtractionPrompt.build(row.packageName, row.timestamp, row.rawText, people, open)
+                    )
+                    val parsed = ExtractionParser.parse(single, row.rawText)
+                    if (single == null) {
+                        DebugLog.log("extract", "row ${row.id} retry got nothing, still pending")
+                    } else {
+                        // Even a reply the parser reads as "not a memory" is a
+                        // decision, and marks the row read. Only an engine
+                        // failure leaves it pending, which is the one case that
+                        // will genuinely differ next time.
+                        apply(row, parsed)
+                    }
+                    _progress.value = Progress(running = true, done = done, total = pending.size)
+                    onProgress(done, pending.size)
+                }
+            }
+
             _progress.value = Progress(
                 done = done,
                 total = pending.size,
