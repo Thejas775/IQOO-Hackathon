@@ -132,7 +132,7 @@ class CalendarViewModel(app: Application) : AndroidViewModel(app) {
             val events = DeviceCalendar.eventsBetween(context, bounds.first, bounds.second)
                 .map(DayItem::Event)
 
-            MemoryRepository.observeDueBetween(bounds.first, bounds.second).collect { memories ->
+            MemoryRepository.observeDayItems(bounds.first, bounds.second).collect { memories ->
                 // Merged and sorted together, so a captured commitment and a
                 // real calendar event at the same hour sit side by side rather
                 // than in two separate lists the user has to reconcile.

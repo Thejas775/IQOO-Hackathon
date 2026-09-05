@@ -433,6 +433,11 @@ object MemoryRepository {
     fun observeAllMemories(limit: Int = 300) = dao.observeAllMemories(limit)
     fun observeKeptBetween(start: Long, end: Long) = dao.observeKeptBetween(start, end)
     fun observeMonth(start: Long, end: Long) = dao.observeMonth(start, end)
+
+    /** The same placement rule as the month grid, for one day. The grid and
+     *  the sheet it opens must agree, or a day shows dots and then an empty
+     *  sheet when tapped. */
+    fun observeDayItems(start: Long, end: Long) = dao.observeMonth(start, end)
     fun observeDistinctPeople() = dao.observeDistinctPeople()
     fun observePackageCounts() = dao.observePackageCounts()
     fun observeByPerson(person: String) = dao.observeByPerson(person)

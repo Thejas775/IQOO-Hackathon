@@ -184,9 +184,21 @@ interface MemoryDao {
 
     /** Whole-month fetch so the grid can be dotted in one query rather than
      *  31 separate day queries. */
+    /**
+     * A month's memories, placed on the day they belong to.
+     *
+     * Dated ones sit on their deadline; undated ones sit on the day they were
+     * captured. The caller already assumed this — it groups by
+     * `dueAt ?: timestamp` — but the query only returned rows with a dueAt, so
+     * that fallback was unreachable and the calendar showed only the small
+     * minority of memories carrying a date. Measured on a real database: 2 of
+     * 31. The same fault the timeline had.
+     */
     @Query(
-        "SELECT * FROM memories WHERE isLoop = 1 AND dueAt >= :start AND dueAt < :end " +
-            "ORDER BY dueAt ASC"
+        "SELECT * FROM memories WHERE isLoop = 1 AND summary IS NOT NULL AND (" +
+            "(dueAt IS NOT NULL AND dueAt >= :start AND dueAt < :end) OR " +
+            "(dueAt IS NULL AND timestamp >= :start AND timestamp < :end)) " +
+            "ORDER BY IFNULL(dueAt, timestamp) ASC"
     )
     fun observeMonth(start: Long, end: Long): Flow<List<MemoryEntity>>
 
