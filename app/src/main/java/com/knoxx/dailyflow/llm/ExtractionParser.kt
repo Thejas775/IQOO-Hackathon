@@ -123,7 +123,7 @@ object ExtractionParser {
             summary = summary,
             sourceQuote = verifyQuote(fields["QUOTE"].cleanOrNull(), sourceText),
             direction = Direction.parse(fields["DIRECTION"].cleanOrNull()),
-            person = fields["PERSON"].cleanOrNull()?.take(40),
+            person = rejectOwner(fields["PERSON"].cleanOrNull()?.take(40), sourceText),
             category = fields["CATEGORY"].cleanOrNull()
                 ?.replaceFirstChar { it.uppercase() }
                 ?.takeIf { it in CATEGORIES },
@@ -143,6 +143,29 @@ object ExtractionParser {
         val v = this?.trim()?.trim('"', '\'', '`')?.trim() ?: return null
         return if (v.lowercase(Locale.US) in NULLISH) null else v
     }
+
+    /**
+     * Drops the phone's owner when the model names them as the other person.
+     *
+     * Messaging apps label the owner's own row "Name (You)", and the model
+     * reads that as a correspondent — producing "You have an unread message
+     * from Thejas regarding your credit card bill", filed against Thejas, on
+     * Thejas's own phone. It then propagated into the morning brief, which
+     * told the owner they had heard from themselves.
+     *
+     * Detected from the screen rather than from configuration: the app is
+     * never told the owner's name, but the screen that named them almost
+     * always marks them, and that marking is the evidence.
+     */
+    private fun rejectOwner(person: String?, sourceText: String): String? {
+        val name = person?.trim() ?: return null
+        val haystack = sourceText.normalise()
+        val needle = name.normalise()
+        if (needle.isEmpty()) return null
+        return if (OWNER_MARKERS.any { haystack.contains("$needle $it") }) null else name
+    }
+
+    private val OWNER_MARKERS = listOf("(you)", "(owner)", "· you", "- you")
 
     /**
      * A quote is only kept if it genuinely appears in the captured text.

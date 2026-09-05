@@ -36,6 +36,14 @@ object ExtractionPrompt {
      *  conversation, and the cost is paid in prefill on every capture. */
     private const val MAX_SNIPPET_CHARS = 3000
 
+    /** A deadline can legitimately be a little in the past — a bill noticed
+     *  after it was due is exactly the thing worth remembering — but not years. */
+    private const val PAST_TOLERANCE_MS = 90L * 24 * 60 * 60 * 1000
+
+    /** Far enough for a real booking or renewal, short enough that a mangled
+     *  year is rejected rather than stored. */
+    private const val FUTURE_TOLERANCE_MS = 3L * 365 * 24 * 60 * 60 * 1000
+
     private val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
     private val isoUtcStamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
@@ -135,7 +143,7 @@ object ExtractionPrompt {
         appendLine("SUMMARY: one sentence addressed to \"you\", or empty if ISLOOP is no")
         appendLine("QUOTE: the exact sentence from the screen that this is based on, copied word for word, or empty")
         appendLine("DIRECTION: self_promise, they_asked, or from_them")
-        appendLine("PERSON: the other person's name, or empty")
+        appendLine("PERSON: the other person's name, or empty. Never the phone owner — a name marked \"(You)\" on the screen is the owner, not a correspondent")
         appendLine("CATEGORY: Work, Personal, Home, or Other")
         appendLine("DUE: yyyy-MM-ddTHH:mm:ss if there is a real deadline, or empty")
         appendLine("PROJECT: a named ongoing effort this belongs to, or empty")
@@ -234,7 +242,19 @@ object ExtractionPrompt {
             // Parsed in device-local time on purpose: the model resolved
             // "tomorrow" against a wall clock the owner shares, so treating
             // the result as UTC would shift every deadline by the offset.
-            synchronized(iso) { iso.parse(value)?.time }
+            val parsed = synchronized(iso) { iso.parse(value)?.time } ?: return null
+            // Sanity-bounded. A model transcribing "05-09-2025" as "05-09-205"
+            // parses cleanly into the year 205, and that reminder would be
+            // scheduled with a delay of minus two thousand years — which
+            // coerces to zero and fires instantly, looking like a bug in the
+            // reminder rather than a typo in the date. Anything outside a
+            // plausible window around now is treated as no date at all.
+            val now = System.currentTimeMillis()
+            if (parsed < now - PAST_TOLERANCE_MS || parsed > now + FUTURE_TOLERANCE_MS) {
+                null
+            } else {
+                parsed
+            }
         } catch (e: java.text.ParseException) {
             null
         }
