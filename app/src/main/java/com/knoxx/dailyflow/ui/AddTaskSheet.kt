@@ -21,10 +21,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.ui.theme.CardWhite
+import com.knoxx.dailyflow.work.ReminderScheduler
 import com.knoxx.dailyflow.ui.theme.Eyebrow
 import com.knoxx.dailyflow.ui.theme.Ink
 import com.knoxx.dailyflow.ui.theme.InkSecondary
@@ -48,6 +50,7 @@ fun AddTaskSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
     var title by remember { mutableStateOf("") }
     var category by remember { mutableStateOf<String?>(null) }
     var due by remember { mutableStateOf(DueChoice.Today) }
@@ -56,12 +59,16 @@ fun AddTaskSheet(
         val text = title.trim()
         if (text.isEmpty()) return
         scope.launch {
-            MemoryRepository.addManual(
+            val id = MemoryRepository.addManual(
                 title = text,
                 dueAt = due.toMillis(),
                 category = category,
                 personName = null
             )
+            // A task the user typed with a due time is the clearest case there
+            // is for wanting a reminder — more so than anything inferred from
+            // a screen, since they asked for it in as many words.
+            due.toMillis()?.let { ReminderScheduler.schedule(context, id, it) }
         }
         onDismiss()
     }

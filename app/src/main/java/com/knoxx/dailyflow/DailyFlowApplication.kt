@@ -8,6 +8,7 @@ import com.knoxx.dailyflow.debug.DebugLog
 import com.knoxx.dailyflow.ml.EmbeddingEngine
 import com.knoxx.dailyflow.work.ExtractionNotification
 import com.knoxx.dailyflow.work.ExtractionScheduler
+import com.knoxx.dailyflow.work.ReminderScheduler
 
 /**
  * Initialises shared state as early as possible.
@@ -40,6 +41,7 @@ class DailyFlowApplication : Application() {
         // queue, unload. Steady-state memory between passes is zero, which is
         // what makes running a multi-gigabyte model on a schedule affordable.
         ExtractionNotification.ensureChannel(this)
+        ReminderScheduler.ensureChannel(this)
         ExtractionScheduler.schedulePeriodic(this)
     }
 }

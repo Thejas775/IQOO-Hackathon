@@ -117,6 +117,12 @@ object ExtractionRunner {
                         category = result.category,
                         projectName = result.project
                     )
+                    // Scheduled only for rows that actually carry a deadline.
+                    // A memory with no due time is still worth keeping, but
+                    // there is no moment at which nudging about it is right.
+                    result.dueAt?.let { due ->
+                        ReminderScheduler.schedule(app, row.id, due)
+                    }
                 } else {
                     MemoryRepository.markNotAMemory(row.id)
                 }
