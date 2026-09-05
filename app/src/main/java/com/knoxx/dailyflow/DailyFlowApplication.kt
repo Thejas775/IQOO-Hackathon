@@ -4,6 +4,7 @@ import android.app.Application
 import com.knoxx.dailyflow.data.CapturePreferences
 import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
+import com.knoxx.dailyflow.ml.EmbeddingEngine
 import com.knoxx.dailyflow.work.ExtractionScheduler
 
 /**
@@ -27,5 +28,12 @@ class DailyFlowApplication : Application() {
         // know WorkManager exists.
         MemoryRepository.setOnCaptureStored { ExtractionScheduler.kick(this) }
         ExtractionScheduler.scheduleSafetyNet(this)
+
+        // Wired here rather than inside the repository so the data layer keeps
+        // no opinion about which model produces vectors — it only records
+        // which one did, so a future swap is detectable rather than silent.
+        MemoryRepository.setEmbedder(EmbeddingEngine.MODEL_ID) { text ->
+            EmbeddingEngine.embed(this, text)
+        }
     }
 }

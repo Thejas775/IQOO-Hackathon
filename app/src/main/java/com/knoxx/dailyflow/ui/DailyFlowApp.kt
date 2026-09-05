@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.knoxx.dailyflow.capture.CapturePermission
+import com.knoxx.dailyflow.ui.ask.AskScreen
+import com.knoxx.dailyflow.ui.ask.AskViewModel
 import com.knoxx.dailyflow.ui.calendar.CalendarScreen
 import com.knoxx.dailyflow.ui.calendar.CalendarViewModel
 import com.knoxx.dailyflow.ui.person.PersonScreen
@@ -107,10 +109,11 @@ fun DailyFlowApp() {
                     )
                 }
 
-                Tab.Ask -> ComingSoon(
-                    "Ask",
-                    "Ask your memory anything. Answered on this device, with the source it came from."
-                )
+                Tab.Ask -> {
+                    val vm: AskViewModel = viewModel()
+                    val askState by vm.state.collectAsState()
+                    AskScreen(state = askState, onAsk = vm::ask)
+                }
 
                 Tab.You -> {
                     val vm: YouViewModel = viewModel()
@@ -148,25 +151,5 @@ fun DailyFlowApp() {
 
     if (showAdd) {
         AddTaskSheet(scope = scope, onDismiss = { showAdd = false })
-    }
-}
-
-/** Stand-in until each screen lands. Says what will be there rather than
- *  showing a spinner, so a half-built app still reads as deliberate. */
-@Composable
-private fun ComingSoon(title: String, body: String) {
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = 40.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, color = Ink)
-        Text(
-            body,
-            style = MaterialTheme.typography.bodyMedium,
-            color = InkSecondary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp)
-        )
     }
 }

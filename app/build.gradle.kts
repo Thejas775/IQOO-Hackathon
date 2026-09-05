@@ -66,6 +66,10 @@ dependencies {
     // there is no network in this path any more.
     implementation(libs.androidx.work.runtime.ktx)
 
+    // On-device text embeddings for Ask's retrieval step. Runs locally like
+    // everything else in the understanding path.
+    implementation(libs.mediapipe.tasks.text)
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
