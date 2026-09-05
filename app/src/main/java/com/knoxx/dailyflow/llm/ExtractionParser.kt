@@ -159,13 +159,41 @@ object ExtractionParser {
      */
     private fun rejectOwner(person: String?, sourceText: String): String? {
         val name = person?.trim() ?: return null
-        val haystack = sourceText.normalise()
         val needle = name.normalise()
         if (needle.isEmpty()) return null
-        return if (OWNER_MARKERS.any { haystack.contains("$needle $it") }) null else name
+
+        // The model answering "me", "you" or "sender" instead of leaving the
+        // field empty. Stored literally it produces a Person page called "me",
+        // and a card reading "From me" on the owner's own phone.
+        if (needle in NOT_A_PERSON) return null
+
+        // Screen furniture promoted to a correspondent. "Compose" and "Inbox"
+        // are buttons the capture happened to flatten next to the message, and
+        // the model reached for the nearest capitalised word.
+        if (needle in UI_LABELS) return null
+
+        // A name marked "(You)" is the owner. Detected from the screen because
+        // the app is never told who owns it, and the screen that named them
+        // almost always marks them.
+        if (OWNER_MARKERS.any { sourceText.normalise().contains("$needle $it") }) return null
+
+        return name
     }
 
     private val OWNER_MARKERS = listOf("(you)", "(owner)", "· you", "- you")
+
+    private val NOT_A_PERSON = setOf(
+        "me", "you", "yourself", "myself", "my self", "self", "i", "us", "we",
+        "them", "they", "sender", "recipient", "user", "owner", "the owner",
+        "the sender", "unknown sender", "no one", "nobody", "someone", "anyone"
+    )
+
+    private val UI_LABELS = setOf(
+        "compose", "inbox", "search", "notification", "notifications", "mail",
+        "email", "message", "messages", "chat", "chats", "group", "groups",
+        "settings", "menu", "home", "back", "more options", "navigation",
+        "status", "updates", "calls", "community", "channel", "channels"
+    )
 
     /**
      * A quote is only kept if it genuinely appears in the captured text.

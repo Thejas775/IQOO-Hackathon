@@ -143,7 +143,7 @@ object ExtractionPrompt {
         appendLine("SUMMARY: one sentence addressed to \"you\", or empty if ISLOOP is no")
         appendLine("QUOTE: the exact sentence from the screen that this is based on, copied word for word, or empty")
         appendLine("DIRECTION: self_promise, they_asked, or from_them")
-        appendLine("PERSON: the other person's name, or empty. Never the phone owner — a name marked \"(You)\" on the screen is the owner, not a correspondent")
+        appendLine("PERSON: who it came from or who asked, or empty")
         appendLine("CATEGORY: Work, Personal, Home, or Other")
         appendLine("DUE: yyyy-MM-ddTHH:mm:ss if there is a real deadline, or empty")
         appendLine("PROJECT: a named ongoing effort this belongs to, or empty")
@@ -159,6 +159,22 @@ object ExtractionPrompt {
             "- DIRECTION: self_promise when the owner committed to something; they_asked when " +
                 "someone asked the owner for something; from_them for information with no " +
                 "obligation attached."
+        )
+        appendLine(
+            // Three failures seen in one pass, all of them the model reaching
+            // for the nearest capitalised word rather than leaving the field
+            // empty: "me", "Compose", and the owner's own name.
+            "- PERSON is whoever sent it or asked — a person's name, or the company or service " +
+                "it came from. It is never a pronoun like \"me\" or \"you\", never a button or " +
+                "label on the screen such as Compose, Inbox or Search, and never the phone " +
+                "owner: a name marked \"(You)\" is the owner, not a correspondent."
+        )
+        appendLine(
+            // The opposite failure, and the more expensive one: a memory with
+            // no person never reaches that person's page, so the relationship
+            // history has a hole in it exactly where the content was good.
+            "- If the screen shows who a message or request came from, PERSON must not be empty. " +
+                "Leave it empty only when the source genuinely is not named."
         )
         appendLine(
             "- DUE: resolve relative wording like \"tomorrow\" or \"by Friday\" against CAPTURED " +
