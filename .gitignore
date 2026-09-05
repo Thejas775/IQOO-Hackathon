@@ -1,15 +1,38 @@
 *.iml
 .gradle
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+local.properties
 .DS_Store
 /build
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+.kotlin/
+
+# IDE state — machine-specific, nothing here belongs in history
+.idea/
+
+# Secrets / signing
+*.jks
+*.keystore
+key.properties
+google-services.json
+secrets.properties
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+
+# Model weights. These are multi-GB LFS objects downloaded at runtime from
+# Hugging Face (see ModelCatalog) — they must never enter git history, where
+# they would be permanent and would make the repo unclonable.
+*.litertlm
+*.task
+*.tflite
+*.bin
+*.part
+
+# Supabase CLI local state (may contain project link/session info)
+supabase/.temp/
+supabase/.branches/
