@@ -7,10 +7,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.knoxx.dailyflow.ui.BenchScreen
 import com.knoxx.dailyflow.ui.theme.DailyFlowTheme
 
 class MainActivity : ComponentActivity() {
@@ -19,29 +20,25 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             DailyFlowTheme {
+                val vm: BenchViewModel = viewModel()
+                val state by vm.state.collectAsState()
+
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
+                    BenchScreen(
+                        state = state,
+                        onSend = vm::send,
+                        onStop = vm::stop,
+                        onSetBackend = vm::setBackend,
+                        onRetryModel = vm::checkModel,
+                        onClearRuns = vm::clearRuns,
+                        onSelectSpec = vm::selectSpec,
+                        onStartDownload = vm::startDownload,
+                        onCancelDownload = vm::cancelDownload,
+                        onDiscardPartial = vm::discardPartial,
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    DailyFlowTheme {
-        Greeting("Android")
     }
 }

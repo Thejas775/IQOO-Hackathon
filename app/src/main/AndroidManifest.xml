@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Only used to fetch the Gemma model from Hugging Face, once. Inference
+         itself is fully on-device and never touches the network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -11,6 +16,14 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.DailyFlow">
+
+        <!-- OpenCL is what lets LiteRT-LM run Gemma on the GPU (Adreno/Mali).
+             Optional so the APK still installs on devices without it — the
+             engine falls back to CPU at runtime. Without these the GPU backend
+             silently fails to load and every run measures CPU speed instead. -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
