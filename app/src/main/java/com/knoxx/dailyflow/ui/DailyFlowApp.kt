@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,14 +24,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.knoxx.dailyflow.capture.CapturePermission
+import com.knoxx.dailyflow.ui.calendar.CalendarScreen
+import com.knoxx.dailyflow.ui.calendar.CalendarViewModel
+import com.knoxx.dailyflow.ui.person.PersonScreen
+import com.knoxx.dailyflow.ui.person.PersonViewModel
 import com.knoxx.dailyflow.ui.theme.Ink
 import com.knoxx.dailyflow.ui.theme.InkSecondary
 import com.knoxx.dailyflow.ui.theme.Paper
 import com.knoxx.dailyflow.ui.today.TodayScreen
 import com.knoxx.dailyflow.ui.today.TodayViewModel
+import com.knoxx.dailyflow.ui.you.YouScreen
+import com.knoxx.dailyflow.ui.you.YouViewModel
 
 /**
  * The app shell: four tabs, a raised add button, and a person detail that
@@ -59,7 +68,19 @@ fun DailyFlowApp() {
             label = "screen"
         ) { target ->
             when (target) {
-                is String -> PersonPlaceholder(target) { openPerson = null }
+                is String -> {
+                    val vm: PersonViewModel = viewModel()
+                    // Keyed on the name so reopening a different person
+                    // reloads rather than showing the previous one's data
+                    // while the new query is still in flight.
+                    LaunchedEffect(target) { vm.load(target) }
+                    val personState by vm.state.collectAsState()
+                    PersonScreen(
+                        state = personState,
+                        onBack = { openPerson = null },
+                        onToggleDone = vm::toggleDone
+                    )
+                }
 
                 Tab.Today -> {
                     val vm: TodayViewModel = viewModel()
@@ -74,20 +95,39 @@ fun DailyFlowApp() {
                     )
                 }
 
-                Tab.Calendar -> ComingSoon(
-                    "Calendar",
-                    "Your month, with every captured commitment on the day it lands."
-                )
+                Tab.Calendar -> {
+                    val vm: CalendarViewModel = viewModel()
+                    val calendarState by vm.state.collectAsState()
+                    CalendarScreen(
+                        state = calendarState,
+                        onSelectDay = vm::selectDay,
+                        onPreviousMonth = vm::previousMonth,
+                        onNextMonth = vm::nextMonth,
+                        onAddTask = { showAdd = true }
+                    )
+                }
 
                 Tab.Ask -> ComingSoon(
                     "Ask",
                     "Ask your memory anything. Answered on this device, with the source it came from."
                 )
 
-                Tab.You -> ComingSoon(
-                    "You",
-                    "Capture status, which apps DailyFlow may read, and one tap to erase everything."
-                )
+                Tab.You -> {
+                    val vm: YouViewModel = viewModel()
+                    val youState by vm.state.collectAsState()
+                    val context = LocalContext.current
+                    YouScreen(
+                        state = youState,
+                        onTogglePause = { vm.setPaused(!youState.paused) },
+                        // There is no API to request the accessibility
+                        // permission — it can only be granted by hand, so this
+                        // opens Settings rather than showing a dialog.
+                        onEnableCapture = { context.startActivity(CapturePermission.settingsIntent()) },
+                        onManageApps = { },
+                        onOpenMemories = { },
+                        onErase = vm::eraseEverything
+                    )
+                }
 
                 else -> Unit
             }
@@ -128,30 +168,5 @@ private fun ComingSoon(title: String, body: String) {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 8.dp)
         )
-    }
-}
-
-@Composable
-private fun PersonPlaceholder(name: String, onBack: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = 40.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        PersonAvatar(name, size = 62.dp)
-        Text(
-            name,
-            style = MaterialTheme.typography.headlineMedium,
-            color = Ink,
-            modifier = Modifier.padding(top = 12.dp)
-        )
-        Text(
-            "Everything about $name stays on this device.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = InkSecondary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 8.dp)
-        )
-        SecondaryChip("Back", onBack, Modifier.padding(top = 20.dp))
     }
 }
