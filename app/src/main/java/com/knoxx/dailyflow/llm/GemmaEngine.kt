@@ -31,9 +31,23 @@ object GemmaEngine {
 
     private const val TAG = "GemmaEngine"
 
-    /** Context length. 32768 measured working on the target device; see the
-     *  context selector in the benchmark screen for how this was established. */
-    private const val MAX_TOKENS = 32768
+    /**
+     * Context length, and LiteRT-LM's own default.
+     *
+     * 32768 was measured loading fine on this device and was used for a while
+     * on that basis, but the measurement was misleading in two ways. It was
+     * taken against the GPU build, which keeps weights in GPU memory, and the
+     * KV cache allocates lazily — so load looked cheap and the cost only
+     * arrived during generation. Against the universal build, whose weights
+     * sit in system RAM, a 32K cache on top was enough to trigger a
+     * system-wide low-memory kill: the phone froze whenever a question was
+     * asked or an extraction pass ran.
+     *
+     * Extraction prompts are a single screen's text and a ~40 token reply, so
+     * they never came close to needing 32K. Nothing in the app pays for this
+     * reduction except a very long Ask conversation.
+     */
+    private const val MAX_TOKENS = 4096
 
     enum class State { Absent, Loading, Ready, Failed }
 
