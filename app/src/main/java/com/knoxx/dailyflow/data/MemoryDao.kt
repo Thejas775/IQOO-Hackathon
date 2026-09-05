@@ -39,6 +39,14 @@ interface MemoryDao {
     @Query("SELECT * FROM memories ORDER BY timestamp DESC LIMIT :limit")
     suspend fun getRecentCaptures(limit: Int): List<MemoryEntity>
 
+    /** Recent summaries, for the post-extraction duplicate check. Text only —
+     *  the whole rows would be wasted work for a string comparison. */
+    @Query(
+        "SELECT summary FROM memories WHERE summary IS NOT NULL " +
+            "AND timestamp > :since ORDER BY timestamp DESC LIMIT :limit"
+    )
+    suspend fun getRecentSummaries(since: Long, limit: Int): List<String>
+
     @Query("SELECT COUNT(*) FROM memories WHERE extracted = 0")
     fun observePendingExtractionCount(): Flow<Int>
 

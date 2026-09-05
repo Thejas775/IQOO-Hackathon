@@ -110,6 +110,15 @@ object MemoryRepository {
      *  land near 0.45, so there is a wide gap to sit in. */
     private const val OVERLAP_THRESHOLD = 0.80f
 
+    /** How many recent summaries the duplicate check compares against. */
+    private const val RECENT_SUMMARY_SCAN = 60
+
+    /** Lower than the capture gate: two summaries of the same thing are
+     *  paraphrases, sharing content words while differing in pronouns and
+     *  phrasing. The observed duplicate pair scored about 0.6, and two genuinely
+     *  different commitments from the same person score far below that. */
+    private const val SUMMARY_OVERLAP_THRESHOLD = 0.55f
+
     /** How many open commitments the extraction prompt is shown. Small: they
      *  are prefill on every captured screen, and a long list makes the model
      *  likelier to match one loosely. */
@@ -298,6 +307,30 @@ object MemoryRepository {
 
     suspend fun pendingExtraction(): List<MemoryEntity> = dao.getPendingExtraction()
     suspend fun recentCaptures(limit: Int) = dao.getRecentCaptures(limit)
+
+    /**
+     * Whether this summary says the same thing as one already stored.
+     *
+     * The capture gates cannot catch this. They compare screen *text*, and two
+     * Slack screens showing the same request scrolled differently are genuinely
+     * different text — so both survive, both get extracted, and the commitments
+     * list shows one obligation twice. Observed exactly that: "Jitendra asked
+     * you to provide all the APIs..." and "Jitendra asked Thejas to provide all
+     * APIs..." stored as two open commitments.
+     *
+     * Compared on the summary rather than the screen, because the summary is
+     * where the duplication is visible to the user. The threshold is lower than
+     * the capture gate's: summaries of the same thing are paraphrases of each
+     * other, sharing meaning and most content words while differing in
+     * pronouns and article — the pair above scores about 0.6.
+     */
+    suspend fun hasSimilarSummary(summary: String): Boolean {
+        val candidate = tokenSet(summary)
+        if (candidate.size < 3) return false
+        val since = System.currentTimeMillis() - DEDUP_WINDOW_MS
+        return dao.getRecentSummaries(since, RECENT_SUMMARY_SCAN)
+            .any { jaccard(candidate, tokenSet(it)) >= SUMMARY_OVERLAP_THRESHOLD }
+    }
     suspend fun pendingEmbedding(): List<MemoryEntity> = dao.getPendingEmbedding()
     fun observePendingCount(): Flow<Int> = dao.observePendingExtractionCount()
 

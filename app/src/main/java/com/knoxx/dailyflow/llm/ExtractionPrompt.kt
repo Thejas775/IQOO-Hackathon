@@ -101,8 +101,19 @@ object ExtractionPrompt {
                 "cannot say what it was about, answer no."
         )
         appendLine(
-            "Most screens are worth nothing, and answering no is the common case. Do not write " +
-                "a summary to avoid leaving it empty."
+            // The counterweight to the rule above, and it belongs here in a way
+            // it did not in the batched prompt. Batching created its own
+            // pressure to record — the model filled five array slots rather
+            // than leaving four empty — so that prompt was told most screens
+            // are worth nothing. Carrying that line over to a single screen
+            // judged alone removed the pressure and kept the correction:
+            // measured 1 memory from 14 screens, against 3 from 7 before.
+            //
+            // Judging one screen on its own merits, the original lean is the
+            // right one. A low-value memory costs the owner a glance; a missed
+            // one costs them the thing itself.
+            "When genuinely unsure, prefer to record it. What you must not do is invent content " +
+                "for a screen that has none."
         )
         appendLine()
 

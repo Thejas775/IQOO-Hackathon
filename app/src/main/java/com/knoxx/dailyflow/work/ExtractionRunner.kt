@@ -114,6 +114,18 @@ object ExtractionRunner {
                 }
 
                 if (result.isMemory) {
+                    // Checked here rather than at capture, because the capture
+                    // gates compare screen text and two screens showing the
+                    // same request scrolled differently are genuinely different
+                    // text. The duplication only becomes visible once both have
+                    // been summarised into the same sentence.
+                    val summary = result.summary
+                    if (summary != null && MemoryRepository.hasSimilarSummary(summary)) {
+                        DebugLog.log("extract", "row ${row.id} duplicate summary, dropped :: $summary")
+                        MemoryRepository.markNotAMemory(row.id)
+                        done++
+                        return
+                    }
                     MemoryRepository.saveExtraction(
                         id = row.id,
                         summary = result.summary,
