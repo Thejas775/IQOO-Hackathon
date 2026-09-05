@@ -41,10 +41,25 @@ import java.util.TimeZone
  * malformed line costs one field, where a malformed batch costs twenty rows —
  * and that is now the only argument for it.
  *
- * What this does NOT establish: the test repeated one prompt rather than
- * running twenty different screens, so it shows validity and determinism for
- * this input, not robustness across the messy ones. Before any move to JSON
- * and batching, run the varied captures.
+ * That first test repeated one clean prompt, so it proved nothing about messy
+ * input. The Tuning screen's format benchmark then ran both formats over six
+ * real stored captures — WhatsApp, Gmail and Slack screens between 952 and
+ * 3,122 characters of flattened accessibility text, emoji and duplicated
+ * labels included. Result: **JSON 6/6, flat 6/6**, twelve inferences in 152
+ * seconds. Neither format dropped a single row.
+ *
+ * So the two formats are equally reliable on this model, and the entire
+ * original argument for this one is gone. What remains is a genuine but
+ * narrower trade: a malformed reply costs one row here and would cost a whole
+ * batch under batching. Since nothing is malformed, that risk is currently
+ * theoretical, while the cost of not batching is measured and constant — about
+ * ten seconds per captured screen.
+ *
+ * The reason this has not been changed is scheduling, not evidence. Moving to
+ * JSON means rewriting the prompt, the parser and the runner together, days
+ * before an evaluation, to fix a throughput problem that the capture debounce
+ * has already made much smaller. The benchmark is left in place so the
+ * decision can be re-made on numbers whenever there is room for it.
  */
 object ExtractionPrompt {
 
@@ -153,6 +168,46 @@ object ExtractionPrompt {
         appendLine("- If ISLOOP is no, leave SUMMARY, QUOTE, PERSON, DUE and PROJECT empty. COMPLETES is independent: a screen can be worth remembering or not, and still show something was finished.")
         appendLine()
 
+        appendLine("SCREEN TEXT:")
+        append(rawText.take(MAX_SNIPPET_CHARS))
+    }
+
+    /**
+     * The same task, asked for as JSON. Used only by the Tuning screen's
+     * format benchmark — nothing in the pipeline calls this.
+     *
+     * Deliberately a close mirror of [build]: same instructions, same fields,
+     * same truncation, differing only in the shape demanded. A benchmark that
+     * also changed the wording would measure the wording.
+     */
+    fun buildJson(
+        packageName: String,
+        capturedAt: Long,
+        rawText: String
+    ): String = buildString {
+        appendLine(
+            "You are DailyFlow, a private memory that runs entirely on one person's phone. " +
+                "Call that person \"you\". Below is the text visible on their screen at one " +
+                "moment, flattened from the Android accessibility tree."
+        )
+        appendLine()
+        appendLine("SCREEN CAME FROM: $packageName")
+        appendLine("CAPTURED AT: ${isoUtcStamp.format(Date(capturedAt))}")
+        appendLine()
+        appendLine("Decide whether this screen contains something worth remembering later.")
+        appendLine(
+            "Reply with ONLY a JSON object, no markdown fence and no other text, matching " +
+                "exactly this shape:"
+        )
+        appendLine(
+            "{\"isLoop\":true|false,\"summary\":\"\",\"quote\":\"\",\"direction\":" +
+                "\"self_promise|they_asked|from_them\",\"person\":\"\",\"category\":" +
+                "\"Work|Personal|Home|Other\",\"due\":\"\",\"project\":\"\"}"
+        )
+        appendLine("Use an empty string for anything absent. Never write the word empty.")
+        appendLine("quote must be copied character for character from the screen text.")
+        appendLine("due is yyyy-MM-ddTHH:mm:ss resolved against CAPTURED AT, or an empty string.")
+        appendLine()
         appendLine("SCREEN TEXT:")
         append(rawText.take(MAX_SNIPPET_CHARS))
     }

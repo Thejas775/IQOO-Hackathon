@@ -32,6 +32,13 @@ interface MemoryDao {
     @Query("SELECT * FROM memories WHERE extracted = 0 ORDER BY timestamp ASC")
     suspend fun getPendingExtraction(): List<MemoryEntity>
 
+    /** Recent captures regardless of extraction state, for the Tuning screen's
+     *  format benchmark. Raw text is what a format has to survive, so the
+     *  benchmark has to run on the real messy thing rather than a clean
+     *  example typed by hand. */
+    @Query("SELECT * FROM memories ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecentCaptures(limit: Int): List<MemoryEntity>
+
     @Query("SELECT COUNT(*) FROM memories WHERE extracted = 0")
     fun observePendingExtractionCount(): Flow<Int>
 

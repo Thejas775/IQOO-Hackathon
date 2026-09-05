@@ -56,15 +56,21 @@ object MemoryRepository {
     private const val DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000L
 
     /**
-     * Collapses a burst of keystroke events into one insert of the final
-     * state. Scoped to text-changed events only — Wick applied this to every
-     * event type and found continuous scrolling kept cancelling and
-     * restarting the timer, so almost nothing survived to be processed: an
-     * 18-minute session produced ~160 captures but only 4 rows. Deciding
-     * "is this new" is the dedup gates' job, not an arbitrary wait.
-     */
-    /**
      * How long a screen must sit still before it is worth reading.
+     *
+     * Wick had already learned this and wrote it down here: it debounced every
+     * event type, found that continuous scrolling kept restarting the timer,
+     * and measured an 18-minute session producing ~160 captures but only 4
+     * rows. That note was sitting directly above this constant when the
+     * debounce was widened to every event type anyway, and the result
+     * reproduced almost exactly — 11 minutes, 3,046 events, 7 rows.
+     *
+     * The note was right about the mechanism and wrong about the remedy.
+     * Scoping the debounce to text-changed events leaves the real firehose,
+     * TYPE_WINDOW_CONTENT_CHANGED, completely unthrottled at ~165 events a
+     * minute, which no on-device extractor can drain. The answer is to debounce
+     * everything but briefly, so a scroll burst still collapses while a screen
+     * glanced at for a moment still lands.
      *
      * Was 3 seconds, which lost almost everything. Measured over eleven
      * minutes of ordinary use: 3,046 events arrived and 86% were cancelled by
@@ -291,6 +297,7 @@ object MemoryRepository {
     // ── pipeline ─────────────────────────────────────────────────────────
 
     suspend fun pendingExtraction(): List<MemoryEntity> = dao.getPendingExtraction()
+    suspend fun recentCaptures(limit: Int) = dao.getRecentCaptures(limit)
     suspend fun pendingEmbedding(): List<MemoryEntity> = dao.getPendingEmbedding()
     fun observePendingCount(): Flow<Int> = dao.observePendingExtractionCount()
 

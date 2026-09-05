@@ -254,7 +254,8 @@ fun DailyFlowApp() {
                 onBack = { showDev = false },
                 onRun = devVm::run,
                 onLoadReal = devVm::loadRealPrompt,
-                onTestReminders = devVm::sendTestReminders
+                onTestReminders = devVm::sendTestReminders,
+                onBenchmark = devVm::runFormatBenchmark
             )
         }
     }

@@ -45,10 +45,14 @@ import com.knoxx.dailyflow.ui.theme.InkSecondary
 import com.knoxx.dailyflow.ui.theme.Paper
 import com.knoxx.dailyflow.ui.theme.PaperSunken
 import com.knoxx.dailyflow.work.ReminderTester
+import org.json.JSONException
+import org.json.JSONObject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+private const val BENCHMARK_ROWS = 6
 
 data class DevState(
     val running: Boolean = false,
@@ -113,6 +117,109 @@ class DevViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Runs both extraction formats over the same real captures and counts what
+     * survives parsing.
+     *
+     * The point is that it uses stored screens rather than a clean example
+     * typed by hand. A format's failure mode only shows up on the messy input
+     * — 2,000 characters of flattened chat list with emoji, timestamps and
+     * duplicated labels — which is exactly what a hand-written test omits.
+     *
+     * Both formats see the same rows in the same order, so the comparison is
+     * of shape and not of luck.
+     */
+    fun runFormatBenchmark() {
+        if (_state.value.running) return
+        _state.value = DevState(running = true, note = "Loading captures…")
+        viewModelScope.launch {
+            val rows = MemoryRepository.recentCaptures(BENCHMARK_ROWS)
+            if (rows.isEmpty()) {
+                _state.value = DevState(note = "No captures stored to test against")
+                return@launch
+            }
+
+            val report = StringBuilder()
+            var jsonOk = 0
+            var flatOk = 0
+            val startedAt = System.nanoTime()
+
+            rows.forEachIndexed { index, row ->
+                _state.value = _state.value.copy(
+                    note = "Running ${index + 1} of ${rows.size} — two calls each"
+                )
+
+                val jsonReply = GemmaEngine.complete(
+                    getApplication(),
+                    ExtractionPrompt.buildJson(row.packageName, row.timestamp, row.rawText)
+                ).orEmpty()
+                val jsonValid = parsesAsJson(jsonReply)
+                if (jsonValid) jsonOk++
+
+                val flatReply = GemmaEngine.complete(
+                    getApplication(),
+                    ExtractionPrompt.build(
+                        row.packageName,
+                        row.timestamp,
+                        row.rawText,
+                        emptyList(),
+                        emptyList()
+                    )
+                ).orEmpty()
+                // The flat format's equivalent of "parsed": it produced the
+                // keys the parser needs rather than prose around them.
+                val flatValid = flatReply.contains("ISLOOP", ignoreCase = true) &&
+                    flatReply.contains("SUMMARY", ignoreCase = true)
+                if (flatValid) flatOk++
+
+                report.appendLine(
+                    "${index + 1}. ${row.packageName.substringAfterLast('.')} " +
+                        "(${row.rawText.length} chars)  json=${if (jsonValid) "OK" else "FAIL"}  " +
+                        "flat=${if (flatValid) "OK" else "FAIL"}"
+                )
+                if (!jsonValid) {
+                    report.appendLine("   json said: ${jsonReply.take(140).replace('\n', ' ')}")
+                }
+                DebugLog.log(
+                    "bench",
+                    "row ${row.id} json=$jsonValid flat=$flatValid len=${row.rawText.length}"
+                )
+            }
+
+            val ms = (System.nanoTime() - startedAt) / 1_000_000
+            report.insert(
+                0,
+                "JSON  $jsonOk/${rows.size} parsed\n" +
+                    "FLAT  $flatOk/${rows.size} parsed\n" +
+                    "${rows.size * 2} inferences in ${ms / 1000}s\n\n"
+            )
+            _state.value = DevState(reply = report.toString(), elapsedMs = ms)
+            DebugLog.log("bench", "done json=$jsonOk/${rows.size} flat=$flatOk/${rows.size}")
+        }
+    }
+
+    /**
+     * Whether the reply is JSON a parser would accept.
+     *
+     * A leading markdown fence is stripped first, because that is a formatting
+     * habit rather than malformed JSON, and counting it as a failure would
+     * overstate the case against the format. Anything else — an unterminated
+     * string, a trailing comma, prose wrapped around the object — fails.
+     */
+    private fun parsesAsJson(raw: String): Boolean {
+        val cleaned = raw.trim()
+            .removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        val start = cleaned.indexOf('{')
+        val end = cleaned.lastIndexOf('}')
+        if (start < 0 || end <= start) return false
+        return try {
+            JSONObject(cleaned.substring(start, end + 1))
+            true
+        } catch (e: JSONException) {
+            false
+        }
+    }
+
     fun sendTestReminders() {
         viewModelScope.launch {
             val count = ReminderTester.fireAll(getApplication())
@@ -132,6 +239,7 @@ fun DevScreen(
     onRun: (String) -> Unit,
     onLoadReal: ((String) -> Unit) -> Unit,
     onTestReminders: () -> Unit,
+    onBenchmark: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var prompt by remember { mutableStateOf("") }
@@ -173,6 +281,26 @@ fun DevScreen(
                 "Fires every scheduled reminder immediately, each showing its real " +
                     "deadline. A preview, not a substitute: they are not consumed, so " +
                     "the genuine nudge still arrives on time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = InkSecondary,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp)
+            )
+        }
+
+        item {
+            SectionHeader("Format test", Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp))
+        }
+        item {
+            SecondaryChip(
+                if (state.running) "Running..." else "Compare JSON vs KEY: value",
+                onClick = onBenchmark,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+            )
+        }
+        item {
+            Text(
+                "Runs both formats over the same stored captures and counts what parses. " +
+                    "Uses real screens, because a format only fails on the messy ones.",
                 style = MaterialTheme.typography.bodySmall,
                 color = InkSecondary,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp)
