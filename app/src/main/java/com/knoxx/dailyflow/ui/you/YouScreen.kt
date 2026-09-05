@@ -19,6 +19,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+// Delegate operators for `by remember { ... }` — extensions, so they have to
+// be imported rather than qualified at the use site.
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -368,7 +374,7 @@ private fun NavRow(title: String, subtitle: String, trailing: String?, onClick: 
 
 @Composable
 private fun StorageCard(state: YouState, onErase: () -> Unit, modifier: Modifier = Modifier) {
-    var confirming by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var confirming by remember { mutableStateOf(false) }
 
     SunkenPanel(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
@@ -417,11 +423,11 @@ private fun StorageCard(state: YouState, onErase: () -> Unit, modifier: Modifier
                     Modifier.padding(top = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    SecondaryChip("Cancel") { confirming = false }
-                    PrimaryChip("Yes, erase everything") {
+                    SecondaryChip("Cancel", onClick = { confirming = false })
+                    PrimaryChip("Yes, erase everything", onClick = {
                         onErase()
                         confirming = false
-                    }
+                    })
                 }
             }
         }

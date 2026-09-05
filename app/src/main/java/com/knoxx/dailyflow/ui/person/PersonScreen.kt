@@ -19,6 +19,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+// getValue/setValue are the delegate operators behind `by remember { ... }`.
+// They are extensions, so they must be imported — fully qualifying the call
+// site does not bring them into scope.
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -113,7 +120,7 @@ fun PersonScreen(
     onToggleDone: (MemoryEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showCommitments by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+    var showCommitments by remember { mutableStateOf(true) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),

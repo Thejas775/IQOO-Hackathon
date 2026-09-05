@@ -73,11 +73,16 @@ fun DraftSheet(state: DraftState, onDismiss: () -> Unit) {
 
             if (!state.generating) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PrimaryChip("Copy") {
+                    // onClick is named because `modifier` is the last
+                    // parameter, so a trailing lambda would bind to that
+                    // instead — and the failure is a type error rather than a
+                    // silently dead button, but only because Modifier and
+                    // () -> Unit happen to be incompatible.
+                    PrimaryChip("Copy", onClick = {
                         clipboard.setText(AnnotatedString(state.text))
                         onDismiss()
-                    }
-                    SecondaryChip("Share") {
+                    })
+                    SecondaryChip("Share", onClick = {
                         // A plain share sheet rather than targeting the source
                         // app: there is no reliable way to open a specific
                         // conversation in WhatsApp or Slack, and silently
@@ -89,7 +94,7 @@ fun DraftSheet(state: DraftState, onDismiss: () -> Unit) {
                         }
                         context.startActivity(Intent.createChooser(send, null))
                         onDismiss()
-                    }
+                    })
                     SecondaryChip("Close", onDismiss)
                 }
             }
