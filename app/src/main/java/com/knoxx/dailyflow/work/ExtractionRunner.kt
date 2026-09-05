@@ -32,15 +32,6 @@ object ExtractionRunner {
 
     private const val TAG = "ExtractionRunner"
 
-    /** Screens per inference.
-     *
-     *  One per call was the pipeline's binding constraint at roughly ten
-     *  seconds each. Five share one context window comfortably: real captures
-     *  measured 770 to 3,120 characters, and the batch prompt truncates each to
-     *  2,200, so five worst-case screens are about 2,750 tokens of input inside
-     *  an 8,192 window. Larger batches would fit but raise the cost of a single
-     *  unparseable reply, since a whole batch is retried together. */
-    private const val BATCH_SIZE = 5
 
     data class Progress(
         val running: Boolean = false,
@@ -97,15 +88,8 @@ object ExtractionRunner {
             }.toMutableList()
 
             // Applies one screen's verdict. Local so it can update `done` and
-            // the live `open` list, both of which belong to this pass, and so
-            // the batch path and the retry path cannot drift apart.
-            suspend fun apply(row: MemoryEntity, parsed: Extraction) {
-                // The quote is checked here rather than in the parser, which
-                // has no way to know which screen each object came from.
-                // Unverified, a fabricated quote would be shown to the user as
-                // their own words.
-                val result = ExtractionParser.verifyQuoteAgainst(parsed, row.rawText)
-
+            // the live `open` list, both of which belong to this pass.
+            suspend fun apply(row: MemoryEntity, result: Extraction) {
                 DebugLog.log(
                     "extract",
                     "row ${row.id} ${row.packageName} memory=${result.isMemory} " +
@@ -154,28 +138,16 @@ object ExtractionRunner {
                 done++
             }
 
-            // Rows a batch could not account for. They are retried one at a
-            // time below rather than left pending, because "left pending"
-            // turned out to mean "stranded forever": the next pass batches the
-            // same row with the same neighbours and the model skips it again.
-            // Observed on a real device — one row skipped in two consecutive
-            // passes, with the queue never reaching zero.
-            val stranded = mutableListOf<MemoryEntity>()
-
-            for (batch in pending.chunked(BATCH_SIZE)) {
+            for (row in pending) {
                 if (!currentCoroutineContext().isActive) break
 
                 val reply = GemmaEngine.complete(
                     app,
-                    ExtractionPrompt.buildJsonBatch(
-                        batch.map { Triple(it.packageName, it.timestamp, it.rawText) },
-                        people,
-                        open
-                    )
+                    ExtractionPrompt.build(row.packageName, row.timestamp, row.rawText, people, open)
                 )
 
                 if (reply == null) {
-                    // Engine failure, not a judgement about these rows. Stop
+                    // Engine failure, not a judgement about this row. Stop
                     // rather than grind through the rest failing identically;
                     // the remaining rows stay pending for the next pass.
                     Log.w(TAG, "Inference returned nothing; ${pending.size - done} left pending")
@@ -183,53 +155,10 @@ object ExtractionRunner {
                     return
                 }
 
-                val results = ExtractionParser.parseJsonBatch(reply, batch.size)
-                if (results.isEmpty()) {
-                    DebugLog.log("extract", "batch of ${batch.size} unparseable, retrying singly")
-                    Log.w(TAG, "Unparseable batch reply; retrying ${batch.size} rows singly")
-                    stranded += batch
-                    continue
-                }
-
-                batch.forEachIndexed { indexInBatch, row ->
-                    val parsed = results[indexInBatch + 1]
-                    if (parsed == null) {
-                        DebugLog.log("extract", "row ${row.id} missing from batch reply")
-                        stranded += row
-                    } else {
-                        apply(row, parsed)
-                    }
-                }
+                apply(row, ExtractionParser.parse(reply, row.rawText))
 
                 _progress.value = Progress(running = true, done = done, total = pending.size)
                 onProgress(done, pending.size)
-            }
-
-            // The single-screen prompt is the fallback precisely because it is
-            // the simpler request: one screen, eight lines, no array to keep
-            // aligned. It costs an inference per row, which is the price of
-            // guaranteeing the queue drains.
-            if (stranded.isNotEmpty()) {
-                DebugLog.log("extract", "retrying ${stranded.size} stranded rows singly")
-                for (row in stranded) {
-                    if (!currentCoroutineContext().isActive) break
-                    val single = GemmaEngine.complete(
-                        app,
-                        ExtractionPrompt.build(row.packageName, row.timestamp, row.rawText, people, open)
-                    )
-                    val parsed = ExtractionParser.parse(single, row.rawText)
-                    if (single == null) {
-                        DebugLog.log("extract", "row ${row.id} retry got nothing, still pending")
-                    } else {
-                        // Even a reply the parser reads as "not a memory" is a
-                        // decision, and marks the row read. Only an engine
-                        // failure leaves it pending, which is the one case that
-                        // will genuinely differ next time.
-                        apply(row, parsed)
-                    }
-                    _progress.value = Progress(running = true, done = done, total = pending.size)
-                    onProgress(done, pending.size)
-                }
             }
 
             _progress.value = Progress(

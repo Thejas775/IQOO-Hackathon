@@ -1,8 +1,6 @@
 package com.knoxx.dailyflow.llm
 
 import com.knoxx.dailyflow.data.Direction
-import org.json.JSONArray
-import org.json.JSONException
 import java.util.Calendar
 import java.util.Locale
 
@@ -101,78 +99,6 @@ object ExtractionParser {
             completesIndex = completes
         )
     }
-
-    /**
-     * Parses a batched JSON reply into results keyed by screen number.
-     *
-     * Keyed rather than positional on purpose. A model that returns four
-     * objects for five screens is the expected failure, and taking results by
-     * position would silently attach screen 5's summary to screen 4 — a wrong
-     * memory attributed to the wrong conversation, which is far worse than a
-     * missing one. An object whose screen number is absent or out of range is
-     * dropped, and its row simply stays pending for the next pass.
-     *
-     * Returns an empty map when the reply is not parseable at all, which the
-     * caller must treat as "retry these rows", not as "none of them mattered".
-     */
-    fun parseJsonBatch(raw: String?, expected: Int): Map<Int, Extraction> {
-        if (raw.isNullOrBlank()) return emptyMap()
-
-        // Models wrap JSON in a fence often enough to be worth tolerating; it
-        // is a formatting habit, not malformed output.
-        val cleaned = raw.trim()
-            .removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val start = cleaned.indexOf('[')
-        val end = cleaned.lastIndexOf(']')
-        if (start < 0 || end <= start) return emptyMap()
-
-        val array = try {
-            JSONArray(cleaned.substring(start, end + 1))
-        } catch (e: JSONException) {
-            return emptyMap()
-        }
-
-        val results = mutableMapOf<Int, Extraction>()
-        for (i in 0 until array.length()) {
-            val obj = array.optJSONObject(i) ?: continue
-            val screen = obj.optInt("screen", -1)
-            if (screen < 1 || screen > expected) continue
-
-            val summary = obj.optString("summary").cleanOrNull()
-            val completes = obj.optInt("completes", 0).takeIf { it > 0 }
-
-            if (summary == null) {
-                results[screen] = Extraction(isMemory = false, completesIndex = completes)
-                continue
-            }
-
-            val due = ExtractionPrompt.parseDue(obj.optString("due").cleanOrNull())
-            results[screen] = Extraction(
-                isMemory = true,
-                summary = summary,
-                // Carried through unverified: this parser does not know which
-                // screen text to check against. The caller pairs each result
-                // with its row and calls verifyQuoteAgainst, which is what
-                // actually drops a fabricated quote.
-                sourceQuote = obj.optString("quote").cleanOrNull(),
-                direction = Direction.parse(obj.optString("direction").cleanOrNull()),
-                person = obj.optString("person").cleanOrNull()?.take(40),
-                category = obj.optString("category").cleanOrNull()
-                    ?.replaceFirstChar { it.uppercase() }
-                    ?.takeIf { it in CATEGORIES },
-                dueAt = due?.let(::applyNineAmIfMidnight),
-                dueAtExplicit = due != null && !isMidnight(due),
-                project = obj.optString("project").cleanOrNull()?.take(60),
-                completesIndex = completes
-            )
-        }
-        return results
-    }
-
-    /** Quote verification needs the screen it came from, which the batch
-     *  parser does not have per object until the caller supplies it. */
-    fun verifyQuoteAgainst(extraction: Extraction, sourceText: String): Extraction =
-        extraction.copy(sourceQuote = verifyQuote(extraction.sourceQuote, sourceText))
 
     private val KNOWN_KEYS = setOf(
         "ISLOOP", "SUMMARY", "QUOTE", "DIRECTION", "PERSON", "CATEGORY", "DUE", "PROJECT",
