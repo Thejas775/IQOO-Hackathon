@@ -63,7 +63,21 @@ object MemoryRepository {
      * 18-minute session produced ~160 captures but only 4 rows. Deciding
      * "is this new" is the dedup gates' job, not an arbitrary wait.
      */
-    private const val DEBOUNCE_MS = 3_000L
+    /**
+     * How long a screen must sit still before it is worth reading.
+     *
+     * Was 3 seconds, which lost almost everything. Measured over eleven
+     * minutes of ordinary use: 3,046 events arrived and 86% were cancelled by
+     * a later event before the timer ever expired, because every scroll, tap
+     * and app switch restarts it from zero. Seven screens survived the whole
+     * session, and only two of those held any content — the rest were list
+     * screens caught while the user paused to decide where to tap.
+     *
+     * Scroll bursts fire many times a second, so this is still far longer than
+     * needed to collapse one. What it also catches now is a message glanced at
+     * for a second and a half, which is how reading actually looks.
+     */
+    private const val DEBOUNCE_MS = 1_200L
     /** A notification is one discrete event, not a stream of frames, and a
      *  second one from the same app must not cancel the first. */
     private const val NOTIFICATION_EVENT_TYPE = "NOTIFICATION"
