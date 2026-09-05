@@ -225,7 +225,9 @@ object MemoryRepository {
             .filter { it.length >= 3 }
             .toSet()
 
-    private val NON_WORD = Regex("[^\p{L}\p{N}]+")
+    // Raw string: the class escapes are regex syntax, not Kotlin escapes, and
+    // writing them singly in a normal string is a compile error.
+    private val NON_WORD = Regex("""[^\p{L}\p{N}]+""")
 
     /** Intersection over union. 1.0 is the same words, 0.0 shares none. */
     private fun jaccard(a: Set<String>, b: Set<String>): Float {
