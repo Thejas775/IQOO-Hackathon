@@ -4,6 +4,7 @@ import android.app.Application
 import com.knoxx.dailyflow.data.CapturePreferences
 import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
+import com.knoxx.dailyflow.work.ExtractionScheduler
 
 /**
  * Initialises shared state as early as possible.
@@ -20,5 +21,11 @@ class DailyFlowApplication : Application() {
         MemoryRepository.init(this)
         CapturePreferences.init(this)
         CaptureStats.init(this)
+
+        // The repository signals that something was stored; deciding this
+        // means "run extraction" belongs here, so the data layer never has to
+        // know WorkManager exists.
+        MemoryRepository.setOnCaptureStored { ExtractionScheduler.kick(this) }
+        ExtractionScheduler.scheduleSafetyNet(this)
     }
 }

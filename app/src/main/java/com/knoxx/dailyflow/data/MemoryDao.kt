@@ -143,6 +143,14 @@ interface MemoryDao {
     )
     fun observeByPerson(person: String): Flow<List<MemoryEntity>>
 
+    /** One-shot version for the extraction prompt, which needs the list inside
+     *  a worker rather than as an observable stream. */
+    @Query(
+        "SELECT personName FROM memories WHERE isLoop = 1 AND personName IS NOT NULL " +
+            "GROUP BY personName ORDER BY MAX(timestamp) DESC LIMIT :limit"
+    )
+    suspend fun getRecentPeople(limit: Int): List<String>
+
     /** The three counters in the Person header, in one query rather than
      *  three round trips. */
     /** SUM returns NULL over zero rows, so the counts are wrapped in IFNULL —

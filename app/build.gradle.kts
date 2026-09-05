@@ -61,6 +61,11 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    // Drives extraction. One-time work, not periodic: WorkManager's 15-minute
+    // periodic floor existed in Wick to amortise a network round trip, and
+    // there is no network in this path any more.
+    implementation(libs.androidx.work.runtime.ktx)
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

@@ -10,6 +10,7 @@ kotlin = "2.2.10"
 composeBom = "2026.02.01"
 coroutines = "1.9.0"
 room = "2.8.4"
+workManager = "2.11.2"
 # Must track the Kotlin version above exactly — KSP releases are pinned to a
 # single compiler version, and a mismatch fails at sync with a clear message.
 ksp = "2.2.10-2.0.2"
@@ -39,6 +40,7 @@ litertlm-android = { group = "com.google.ai.edge.litertlm", name = "litertlm-and
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

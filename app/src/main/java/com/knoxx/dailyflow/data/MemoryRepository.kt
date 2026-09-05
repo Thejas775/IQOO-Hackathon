@@ -42,6 +42,10 @@ object MemoryRepository {
     private var embedder: Embedder? = null
     private var embedderId: String? = null
 
+    /** Fired after a capture survives dedup and is stored. Set by the
+     *  Application so this layer never has to know that WorkManager exists. */
+    private var onCaptureStored: (() -> Unit)? = null
+
     /**
      * How far back dedup looks. Generous on purpose: an unread message sitting
      * on screen unchanged for hours should not produce a second memory each
@@ -85,6 +89,10 @@ object MemoryRepository {
     fun setEmbedder(id: String, embedder: Embedder) {
         this.embedderId = id
         this.embedder = embedder
+    }
+
+    fun setOnCaptureStored(listener: () -> Unit) {
+        onCaptureStored = listener
     }
 
     // ── ingest ───────────────────────────────────────────────────────────
@@ -135,6 +143,12 @@ object MemoryRepository {
                 embeddingModel = if (vector != null) embedderId else null
             )
         )
+
+        // Signalled only after a row actually survived both gates, not on
+        // every captured event — most captures are dropped, and waking the
+        // extractor for each one would keep the model loaded all day for
+        // nothing.
+        onCaptureStored?.invoke()
     }
 
     /** Returns 0 on a length mismatch rather than throwing — which is exactly
@@ -225,6 +239,7 @@ object MemoryRepository {
 
     suspend fun markNotAMemory(id: Long) = dao.markNotAMemory(id)
     suspend fun existingSummaries(): List<String> = dao.getAllSummaries()
+    suspend fun recentPeople(limit: Int = 20): List<String> = dao.getRecentPeople(limit)
     suspend fun retrievalCandidates(limit: Int = RETRIEVAL_POOL) = dao.getRetrievalCandidates(limit)
     suspend fun capturedBetween(start: Long, end: Long) = dao.getCapturedBetween(start, end)
     suspend fun byId(id: Long) = dao.getById(id)
