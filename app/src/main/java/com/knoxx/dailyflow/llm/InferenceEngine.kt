@@ -38,6 +38,10 @@ class InferenceEngine(private val context: Context) {
     var activeVisionBackend: BackendChoice? = null
         private set
 
+    /** The KV-cache budget the loaded engine is actually running with. */
+    var activeMaxNumTokens: Int? = null
+        private set
+
     val isReady: Boolean get() = conversation != null
 
     /**
@@ -54,7 +58,11 @@ class InferenceEngine(private val context: Context) {
      *
      * Returns the backend the main model actually loaded on.
      */
-    suspend fun initialize(modelPath: String, preferred: BackendChoice): BackendChoice =
+    suspend fun initialize(
+        modelPath: String,
+        preferred: BackendChoice,
+        maxNumTokens: Int = DEFAULT_MAX_NUM_TOKENS
+    ): BackendChoice =
         withContext(Dispatchers.IO) {
             close()
 
@@ -69,15 +77,16 @@ class InferenceEngine(private val context: Context) {
             var lastFailure: Throwable? = null
             for ((main, vision) in ladder) {
                 try {
-                    load(modelPath, main, vision)
+                    load(modelPath, main, vision, maxNumTokens)
                     activeBackend = main
                     activeVisionBackend = vision
+                    activeMaxNumTokens = maxNumTokens
                     if (vision == BackendChoice.CPU) {
                         Log.w(TAG, "Vision running on CPU — known unstable across image turns")
                     }
                     return@withContext main
                 } catch (t: Throwable) {
-                    Log.w(TAG, "Init failed for main=$main vision=$vision", t)
+                    Log.w(TAG, "Init failed for main=$main vision=$vision tokens=$maxNumTokens", t)
                     lastFailure = t
                     close()
                 }
@@ -85,12 +94,18 @@ class InferenceEngine(private val context: Context) {
             throw lastFailure ?: IllegalStateException("Engine failed to initialize")
         }
 
-    private fun load(modelPath: String, main: BackendChoice, vision: BackendChoice) {
+    private fun load(
+        modelPath: String,
+        main: BackendChoice,
+        vision: BackendChoice,
+        maxNumTokens: Int
+    ) {
         val config = EngineConfig(
             modelPath = modelPath,
             backend = main.toBackend(),
             visionBackend = vision.toBackend(),
-            cacheDir = context.cacheDir.path
+            cacheDir = context.cacheDir.path,
+            maxNumTokens = maxNumTokens
         )
         val e = Engine(config)
         e.initialize()
@@ -160,7 +175,27 @@ class InferenceEngine(private val context: Context) {
         activeVisionBackend = null
     }
 
-    private companion object {
-        const val TAG = "InferenceEngine"
+    companion object {
+        private const val TAG = "InferenceEngine"
+
+        /**
+         * LiteRT-LM's own default if `maxNumTokens` is omitted — confirmed by
+         * reading the engine's validated settings on device, which printed
+         * `max_tokens: 4096`. Gemma 4 E4B itself supports up to 32k, so leaving
+         * this unset silently discards seven eighths of the usable window.
+         *
+         * It is not free to raise: this is the **KV-cache budget**, and memory
+         * scales with it. There are also field reports of instability above
+         * 4096 — `litert#6765` (SIGSEGV above 4096 on iOS arm64) and
+         * `litert-lm#1681`, where a team settled on 3072 as their production
+         * value to stay "safely below the crash threshold" on Tensor G5. Both
+         * are other devices; treat larger values as unverified until measured
+         * on the actual target, which is what the in-app selector is for.
+         */
+        const val DEFAULT_MAX_NUM_TOKENS = 4096
+
+        /** Offered in the UI so the memory and stability cost of a bigger
+         *  window can be measured rather than assumed. */
+        val CONTEXT_OPTIONS = listOf(4096, 8192, 16384, 32768)
     }
 }

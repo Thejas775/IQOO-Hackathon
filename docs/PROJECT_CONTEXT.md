@@ -160,6 +160,64 @@ Also: 12B requires LiteRT-LM ≥ 0.17 (we're on 0.11.0), is a 5.99 GB download, 
 
 **Conclusion: E4B is the ceiling on this hardware.** Not a compromise — the ceiling.
 
+### MEASURED on the actual demo device — 2026-09-05
+
+Device: **vivo iQOO I2501**, SoC **SM8850** (Snapdragon 8 Elite Gen 5), Android 16 / API 36,
+arm64-v8a, 15.6 GB RAM. Model: `gemma-4-E4B-it.litertlm` (universal build, 3,659,530,240 bytes).
+
+**Context window — settled, not inferred.** The engine prints its own validated config:
+
+```
+MainExecutorSettings: backend: GPU
+max_tokens: 4096
+clear_kv_cache_before_prefill: true
+VisionExecutorSettings:
+  EncoderBackend: GPU
+  AdapterBackend: CPU
+```
+
+**`max_tokens: 4096` — but that was *our* default, not the model's limit.** The engine prints
+whatever it was configured with, and we never configured it. `maxNumTokens` is an `EngineConfig`
+field (Google's own AI Edge Gallery does `EngineConfig(... maxNumTokens = maxTokens ...)`), and
+omitting it takes LiteRT-LM's 4096 default — silently discarding seven eighths of E4B's usable
+32k window. Now set explicitly, with an in-app 4K/8K/16K/32K selector.
+
+Raising it is not free: this is the **KV-cache budget**, so memory scales with it, and there are
+field reports of instability above 4096 — `litert#6765` (SIGSEGV above 4096 on iOS arm64) and
+`litert-lm#1681`, where a team settled on 3072 to stay "safely below the crash threshold" on
+Tensor G5. Both are other devices. The selector exists so the ceiling on *this* hardware gets
+measured rather than guessed.
+
+**Throughput (GPU, 3 runs):** best **15.9 tok/s**, warm mean **12.3 tok/s**. Below Google's
+published 22.1 tok/s for E4B/GPU on an S26 Ultra. Two likely reasons, neither confirmed: the
+installed APK is a **debug build with `-Xcheck:jni` active** (logcat shows `Late-enabling -Xcheck:jni`
+plus Studio's instrumentation agent), which taxes every JNI crossing — and LiteRT-LM streams
+through JNI; and runs 2–3 generated much longer outputs, so decode averages down as the
+sequence grows. Re-measure on a release build before treating 12–16 tok/s as the real number.
+
+**Memory:** TOTAL PSS 1.42 GB, Graphics 394 MB, Native heap 287 MB — for a 3.49 GB model.
+Weights stay memory-mapped, exactly as the model card claims.
+
+**Model sections present** (from `litert_lm_loader`), which confirms multimodality directly:
+
+| Section | Size | Backend constraint |
+|---|---|---|
+| `tf_lite_vision_encoder` | 224 MB | prefers fp16 |
+| `tf_lite_vision_adapter` | 7.9 MB | **cpu (forced by the model)** |
+| `tf_lite_audio_encoder_hw` | ~837 MB | cpu |
+| `tf_lite_prefill_decode` | — | prefers fp16 |
+| `tf_lite_mtp_drafter` | ~2.3 GB | — |
+
+Two things follow. **The vision adapter runs on CPU no matter what we request** — the constraint
+is baked into the model's own metadata, so our GPU-vision ladder only governs the encoder.
+And an **MTP drafter is present**, meaning speculative decoding is available and unexplored —
+a possible speed win if 12–16 tok/s proves too slow.
+
+Also note: `engine_settings.cc` reports *"The Main backend constraint is not set"* for this
+build — unlike 12B, which pins the prefill/decode section to GPU and thereby refuses CPU.
+
+**Still untested:** behaviour at the 4096 boundary — graceful truncation, an error, or a crash.
+
 ### Official Android benchmarks (targets to compare our numbers against)
 
 Google's own figures, S26 Ultra, 1024 prefill / 256 decode tokens, 2048 context:
@@ -222,7 +280,17 @@ Use EmbeddingGemma when the dedup layer gets built. Do not re-adopt `bert_embedd
 Wick's `ExtractionWorker` batches **20 snippets × up to 3000 chars**, plus 50 existing summaries as context, and demands a strict JSON array back via Gemini's `responseSchema`.
 
 **None of that survives the move on-device:**
-- Gemma 4 has a **32k context**. That batch alone blows past it.
+- **Context is far smaller than the headline number.** Three different figures get quoted and only the smallest one is operative:
+
+  | Figure | Source | What it means |
+  |---|---|---|
+  | 256K | Gemma 4 model card (ai.google.dev) | The architecture's ceiling. Not what you get. |
+  | 32K | litert-community E4B card | What the `.litertlm` build claims to support. |
+  | **4K** | Real deployments + HF discussion #18 | **The practical default `max_num_tokens`.** |
+
+  And raising it is not free: `litert#6765` reports `max_num_tokens > 4096` **SIGSEGVs in reshape on iOS arm64**, with the response being that 32k "should" work given sufficient memory. So treat anything above 4K as unverified on our hardware until measured.
+
+  Wick's batch of 20 × 3000 chars is roughly 15k tokens, plus ~1k of prompt and ~1k of summary context. That **would** fit in a true 32k window — so "the context can't hold it" was wrong. At the 4K default it doesn't come close, and the KV cache cost of raising the window to fit it is exactly the memory we don't want to spend on a phone.
 - LiteRT-LM has **no schema-constrained output**. There is no `responseSchema` equivalent.
 
 So the on-device path needs a different shape: **one snippet per inference**, a deterministic line-based output format (per Vision-AI-Gemma's `AgentParser`), and a hand-written parser. This is a different worker, different prompt, different parser — not a swapped-out client.

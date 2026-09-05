@@ -62,6 +62,7 @@ import com.knoxx.dailyflow.ChatMessage
 import com.knoxx.dailyflow.ModelStatus
 import com.knoxx.dailyflow.llm.BackendChoice
 import com.knoxx.dailyflow.llm.GenerationStats
+import com.knoxx.dailyflow.llm.InferenceEngine
 import com.knoxx.dailyflow.llm.ModelCatalog
 import com.knoxx.dailyflow.llm.ModelSpec
 import com.knoxx.dailyflow.vision.CameraCapture
@@ -74,6 +75,7 @@ fun BenchScreen(
     onSetBackend: (BackendChoice) -> Unit,
     onRetryModel: () -> Unit,
     onClearRuns: () -> Unit,
+    onSetMaxNumTokens: (Int) -> Unit,
     onSelectSpec: (ModelSpec) -> Unit,
     onStartDownload: () -> Unit,
     onCancelDownload: () -> Unit,
@@ -83,7 +85,7 @@ fun BenchScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        HeaderBar(state, onSetBackend, onClearRuns)
+        HeaderBar(state, onSetBackend, onClearRuns, onSetMaxNumTokens)
 
         when (state.modelStatus) {
             ModelStatus.Missing ->
@@ -135,7 +137,8 @@ fun BenchScreen(
 private fun HeaderBar(
     state: BenchUiState,
     onSetBackend: (BackendChoice) -> Unit,
-    onClearRuns: () -> Unit
+    onClearRuns: () -> Unit,
+    onSetMaxNumTokens: (Int) -> Unit
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
@@ -173,6 +176,31 @@ private fun HeaderBar(
                         "running on ${state.activeBackend.name}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Surfaced as a control, not a constant: this is the KV-cache
+            // budget, so it is the main lever on both memory and how much of a
+            // captured screen can be fed in at once. Omitting it silently
+            // caps the window at 4096 even though E4B supports 32k.
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "CTX",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                InferenceEngine.CONTEXT_OPTIONS.forEach { tokens ->
+                    FilterChip(
+                        selected = state.requestedMaxNumTokens == tokens,
+                        onClick = { onSetMaxNumTokens(tokens) },
+                        enabled = !state.isGenerating,
+                        label = { Text("${tokens / 1024}K") }
                     )
                 }
             }

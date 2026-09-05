@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
                         onSetBackend = vm::setBackend,
                         onRetryModel = vm::checkModel,
                         onClearRuns = vm::clearRuns,
+                        onSetMaxNumTokens = vm::setMaxNumTokens,
                         onSelectSpec = vm::selectSpec,
                         onStartDownload = vm::startDownload,
                         onCancelDownload = vm::cancelDownload,

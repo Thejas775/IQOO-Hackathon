@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.knoxx.dailyflow.llm.BackendChoice
 import com.knoxx.dailyflow.llm.GenerationStats
 import com.knoxx.dailyflow.llm.InferenceEngine
+import com.knoxx.dailyflow.llm.InferenceEngine.Companion.DEFAULT_MAX_NUM_TOKENS
 import com.knoxx.dailyflow.llm.ModelCatalog
 import com.knoxx.dailyflow.llm.ModelDownloader
 import com.knoxx.dailyflow.llm.ModelLocator
@@ -45,6 +46,9 @@ data class BenchUiState(
     val requestedBackend: BackendChoice = BackendChoice.GPU,
     val activeBackend: BackendChoice? = null,
     val activeVisionBackend: BackendChoice? = null,
+    /** KV-cache budget to load with. Changing it reloads the engine. */
+    val requestedMaxNumTokens: Int = InferenceEngine.DEFAULT_MAX_NUM_TOKENS,
+    val activeMaxNumTokens: Int? = null,
     val messages: List<ChatMessage> = emptyList(),
     val isGenerating: Boolean = false,
     val errorMessage: String = "",
@@ -196,16 +200,27 @@ class BenchViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state.value = _state.value.copy(modelStatus = ModelStatus.Loading, errorMessage = "")
             try {
-                val actual = engine.initialize(path, _state.value.requestedBackend)
+                val actual = engine.initialize(
+                    modelPath = path,
+                    preferred = _state.value.requestedBackend,
+                    maxNumTokens = _state.value.requestedMaxNumTokens
+                )
                 _state.value = _state.value.copy(
                     modelStatus = ModelStatus.Ready,
                     activeBackend = actual,
-                    activeVisionBackend = engine.activeVisionBackend
+                    activeVisionBackend = engine.activeVisionBackend,
+                    activeMaxNumTokens = engine.activeMaxNumTokens
                 )
             } catch (t: Throwable) {
+                // A larger window is the most likely cause of a load failure —
+                // it is the one setting that scales memory — so say so rather
+                // than reporting a bare native message.
+                val hint = if (_state.value.requestedMaxNumTokens > InferenceEngine.DEFAULT_MAX_NUM_TOKENS)
+                    " (try a smaller context — ${_state.value.requestedMaxNumTokens} tokens may not fit)"
+                else ""
                 _state.value = _state.value.copy(
                     modelStatus = ModelStatus.Error,
-                    errorMessage = t.message ?: "Failed to load model"
+                    errorMessage = (t.message ?: "Failed to load model") + hint
                 )
             }
         }
@@ -218,6 +233,20 @@ class BenchViewModel(application: Application) : AndroidViewModel(application) {
         val model = ModelLocator.find(getApplication()) ?: return
         _state.value = _state.value.copy(
             requestedBackend = choice,
+            runs = emptyList(),
+            messages = emptyList()
+        )
+        loadModel(model.absolutePath)
+    }
+
+    /** Reloads the engine with a different KV-cache budget. Clears runs, since
+     *  context size changes both memory and decode cost — averaging across two
+     *  window sizes would compare nothing meaningful. */
+    fun setMaxNumTokens(tokens: Int) {
+        if (tokens == _state.value.requestedMaxNumTokens) return
+        val model = ModelLocator.find(getApplication()) ?: return
+        _state.value = _state.value.copy(
+            requestedMaxNumTokens = tokens,
             runs = emptyList(),
             messages = emptyList()
         )
