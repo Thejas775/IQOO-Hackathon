@@ -38,12 +38,15 @@ data class TodayState(
     /** What "Play brief" reads aloud when no generated brief exists yet.
      *  Kept in sync with the card's own fallback so the spoken and written
      *  versions never disagree. */
-    fun spokenFallback(): String = when {
-        openCommitments.isEmpty() && counts.today == 0 ->
-            "Nothing is due today. Your memory is clear."
-        openCommitments.size == 1 -> "One promise is still open today."
-        openCommitments.isEmpty() -> "${counts.today} on the calendar today, and nothing outstanding."
-        else -> "${openCommitments.size} promises are still open today."
+    fun spokenFallback(): String {
+        val open = openCommitments.size
+        val moments = if (counts.today == 1) "One moment" else "${counts.today} moments"
+        return when {
+            counts.today == 0 && open == 0 -> "Nothing recorded for today yet."
+            open == 0 -> "$moments from today, and nothing left open."
+            open == 1 -> "$moments from today, with one still open."
+            else -> "$moments from today, with $open still open."
+        }
     }
 }
 

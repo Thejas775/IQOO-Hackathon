@@ -25,15 +25,15 @@ object BriefGenerator {
 
         val prompt = buildString {
             appendLine(
-                "You are DailyFlow, a private memory on one person's phone. Below is what is on " +
-                    "their plate today. Write ONE sentence, at most two, addressed to \"you\", " +
-                    "that tells them what today is really about."
+                "You are DailyFlow, a private memory on one person's phone. Below is everything " +
+                    "from their day. Write a short summary of the day, addressed to \"you\"."
             )
             appendLine()
             appendLine("Rules:")
             appendLine("- Use only what is listed. Never invent a person, task or deadline.")
-            appendLine("- Lead with what is most likely to slip or matter most.")
-            appendLine("- No greeting, no preamble, no list. Just the sentence.")
+            appendLine("- Two or three sentences. Cover the day as a whole.")
+            appendLine("- Mention what is still open, but do not make the whole summary about it.")
+            appendLine("- No greeting, no preamble, no list. Just the summary.")
             appendLine(
                 "- Plain and specific. Name the person or the thing rather than saying " +
                     "\"a few items\"."
@@ -46,11 +46,11 @@ object BriefGenerator {
                 appendLine("- [$state]$who ${memory.summary}")
             }
             appendLine()
-            appendLine("The sentence:")
+            appendLine("The summary:")
         }
 
         return GemmaEngine.complete(context, prompt)
-            ?.let(::firstSentenceOnly)
+            ?.let(::trimToSummary)
             ?.takeIf { it.isNotBlank() }
     }
 
@@ -95,11 +95,11 @@ object BriefGenerator {
      * enough to matter, and the brief card has room for one line. Trimming
      * here beats letting the card overflow or clip mid-word.
      */
-    private fun firstSentenceOnly(raw: String): String {
+    private fun trimToSummary(raw: String): String {
         val cleaned = raw.trim().removePrefix("\"").removeSuffix("\"").trim()
-        // Two sentences are allowed — the design's own example is two — but a
-        // third is where a model starts padding.
+        // Three sentences are allowed: the card is a summary of the whole day,
+        // not a single headline. A fourth is where a model starts padding.
         val parts = Regex("(?<=[.!?])\\s+").split(cleaned)
-        return parts.take(2).joinToString(" ").trim()
+        return parts.take(3).joinToString(" ").trim()
     }
 }

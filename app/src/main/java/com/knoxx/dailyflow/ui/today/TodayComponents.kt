@@ -52,7 +52,6 @@ import com.knoxx.dailyflow.ui.theme.Paper
 import com.knoxx.dailyflow.ui.theme.SourceQuote
 import com.knoxx.dailyflow.ui.theme.VioletGradientBottom
 import com.knoxx.dailyflow.ui.theme.VioletGradientTop
-import com.knoxx.dailyflow.ui.theme.VioletRing
 
 /**
  * The hero card. Until Gemma's synthesis lands it shows a line derived from
@@ -67,8 +66,6 @@ fun MorningBrief(
     briefText: String? = null,
     onPlay: (() -> Unit)? = null
 ) {
-    val total = state.counts.today
-    val kept = state.counts.keptToday
 
     Box(
         modifier = modifier
@@ -104,7 +101,6 @@ fun MorningBrief(
                         color = Color.White.copy(alpha = 0.72f)
                     )
                 }
-                ProgressRing(kept = kept, total = total)
             }
 
             Text(
@@ -144,38 +140,16 @@ fun MorningBrief(
 private fun fallbackBrief(state: TodayState): String {
     val open = state.openCommitments.size
     val today = state.counts.today
+    val moments = if (today == 1) "One moment" else "$today moments"
     return when {
-        state.pendingCount > 0 && today == 0 ->
-            "Still reading your day. Nothing is due yet."
-        today == 0 && open == 0 -> "Nothing is due today. Your memory is clear."
-        open == 0 -> "$today on the calendar today, and nothing outstanding."
-        open == 1 -> "One promise is still open today."
-        else -> "$open promises are still open today."
+        state.pendingCount > 0 && today == 0 -> "Still reading your day."
+        today == 0 && open == 0 -> "Nothing recorded for today yet."
+        open == 0 -> "$moments from today, and nothing left open."
+        open == 1 -> "$moments from today, with one still open."
+        else -> "$moments from today, with $open still open."
     }
 }
 
-@Composable
-private fun ProgressRing(kept: Int, total: Int) {
-    // Drawn as two stacked circles rather than an arc: at 46dp the difference
-    // is invisible, and this avoids a Canvas for a purely decorative ring.
-    Box(
-        Modifier.size(46.dp).clip(CircleShape)
-            .background(Color.White.copy(alpha = if (total > 0 && kept >= total) 1f else 0.22f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            Modifier.size(36.dp).clip(CircleShape).background(VioletRing),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                "$kept/$total",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White,
-                fontWeight = FontWeight(800)
-            )
-        }
-    }
-}
 
 @Composable
 private fun BriefButton(
