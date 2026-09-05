@@ -1,19 +1,28 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Nothing DailyFlow stores may leave the device by any route.
+
+    android:allowBackup="false" already disables cloud backup, but on Android
+    12+ device-to-device transfer is governed separately by this file. Wick
+    shipped the untouched template here with allowBackup="true", which made its
+    entire memory database eligible for Google backup through a channel no
+    consent screen in the app ever mentioned.
+
+    Excluding the root of each domain excludes everything beneath it, so this
+    stays correct as new files are added rather than needing a new rule per
+    store.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
     </device-transfer>
-    -->
 </data-extraction-rules>

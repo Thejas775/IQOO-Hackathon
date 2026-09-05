@@ -1,3 +1,12 @@
 <resources>
-    <string name="app_name">Daily Flow</string>
+    <string name="app_name">DailyFlow</string>
+    <string name="capture_service_label">DailyFlow</string>
+
+    <!--
+        Shown in system Settings when the user is deciding whether to turn
+        capture on. Written to state plainly what is read and what leaves the
+        device, because this screen is the only place many users will ever read
+        that — and in DailyFlow's case the answer is genuinely "nothing".
+    -->
+    <string name="capture_service_description">DailyFlow reads on-screen text from the apps you allow and turns it into a private memory of your commitments. Everything is understood on this device by Gemma — no text is ever uploaded, and it works with no network at all. You choose which apps it may read, and you can pause it or erase everything at any time.</string>
 </resources>

@@ -8,7 +8,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
-        android:allowBackup="true"
+        android:name=".DailyFlowApplication"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -28,6 +29,24 @@
              Note the app deliberately does NOT declare the CAMERA permission:
              ACTION_IMAGE_CAPTURE needs no grant unless the manifest asks for
              it, so staying silent keeps the flow permission-free. -->
+        <!--
+            The capture service. Guarded by BIND_ACCESSIBILITY_SERVICE so only
+            the system can bind to it, and exported because the system is a
+            different process — that pair is required, not a loosening.
+        -->
+        <service
+            android:name=".capture.CaptureService"
+            android:exported="true"
+            android:label="@string/capture_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/capture_service_config" />
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

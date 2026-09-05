@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    canRetrieveWindowContent is what allows the service to read the on-screen
+    text of the foreground app — it is the entire capability DailyFlow needs.
+
+    Gesture and screenshot capabilities are deliberately NOT requested. Wick
+    declared canPerformGestures and canTakeScreenshot for its AutoPilot
+    feature; DailyFlow does not ship that, so asking for the ability to tap and
+    type on the user's behalf would be requesting power the app has no use for.
+
+    notificationTimeout throttles delivery at the framework level, before any
+    of our code runs — cheaper than filtering the same events ourselves.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewTextChanged|typeViewClicked|typeViewFocused"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="100"
+    android:description="@string/capture_service_description"
+    android:settingsActivity="com.knoxx.dailyflow.MainActivity" />
