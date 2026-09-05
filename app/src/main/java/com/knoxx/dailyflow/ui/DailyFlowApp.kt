@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.knoxx.dailyflow.capture.CapturePermission
 import com.knoxx.dailyflow.capture.NotificationPermission
+import com.knoxx.dailyflow.ui.apps.AllowListScreen
+import com.knoxx.dailyflow.ui.apps.AllowListViewModel
 import com.knoxx.dailyflow.ui.ask.AskScreen
 import com.knoxx.dailyflow.ui.ask.AskViewModel
 import com.knoxx.dailyflow.ui.calendar.CalendarScreen
@@ -61,6 +63,7 @@ fun DailyFlowApp() {
     var openPerson by remember { mutableStateOf<String?>(null) }
     var showAdd by remember { mutableStateOf(false) }
     var showModelSetup by remember { mutableStateOf(false) }
+    var showAllowList by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val modelVm: ModelSetupViewModel = viewModel()
@@ -166,7 +169,7 @@ fun DailyFlowApp() {
                         // permission — it can only be granted by hand, so this
                         // opens Settings rather than showing a dialog.
                         onEnableCapture = { context.startActivity(CapturePermission.settingsIntent()) },
-                        onManageApps = { },
+                        onManageApps = { showAllowList = true },
                         onOpenMemories = { },
                         onErase = vm::eraseEverything,
                         onSync = vm::sync,
@@ -184,12 +187,25 @@ fun DailyFlowApp() {
         // The person detail owns the whole screen, so the tab bar is hidden
         // while it is open — showing it would suggest the detail is a fifth
         // tab, and tapping the current tab would appear to do nothing.
-        if (openPerson == null) {
+        if (openPerson == null && !showAllowList) {
             BottomNav(
                 current = tab,
                 onSelect = { tab = it },
                 onAdd = { showAdd = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        // A full-screen overlay rather than a fifth tab: it is reached from a
+        // row inside You, and showing the tab bar over it would suggest the
+        // tabs still switch underneath.
+        if (showAllowList) {
+            val appsVm: AllowListViewModel = viewModel()
+            val apps by appsVm.state.collectAsState()
+            AllowListScreen(
+                apps = apps,
+                onBack = { showAllowList = false },
+                onToggle = appsVm::setAllowed
             )
         }
     }

@@ -147,6 +147,20 @@ interface MemoryDao {
     )
     fun observeDistinctPeople(): Flow<List<String>>
 
+    /** Apps that have actually produced captures, busiest first.
+     *
+     *  The allow-list is built from this rather than from PackageManager's
+     *  full app list: querying every installed package needs QUERY_ALL_PACKAGES
+     *  on Android 11+, which is a heavy permission to hold for a settings
+     *  screen — and the apps worth deciding about are precisely the ones
+     *  already generating rows.
+     */
+    @Query(
+        "SELECT packageName AS packageName, COUNT(*) AS captureCount FROM memories " +
+            "WHERE packageName != '' GROUP BY packageName ORDER BY captureCount DESC"
+    )
+    fun observePackageCounts(): Flow<List<PackageCount>>
+
     @Query(
         "SELECT * FROM memories WHERE isLoop = 1 AND personName = :person " +
             "ORDER BY timestamp DESC"

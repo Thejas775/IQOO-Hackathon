@@ -271,6 +271,7 @@ object MemoryRepository {
     fun observeKeptBetween(start: Long, end: Long) = dao.observeKeptBetween(start, end)
     fun observeMonth(start: Long, end: Long) = dao.observeMonth(start, end)
     fun observeDistinctPeople() = dao.observeDistinctPeople()
+    fun observePackageCounts() = dao.observePackageCounts()
     fun observeByPerson(person: String) = dao.observeByPerson(person)
     fun observePersonStats(person: String) = dao.observePersonStats(person)
     fun observeDistinctProjects() = dao.observeDistinctProjects()
