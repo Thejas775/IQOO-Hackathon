@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.knoxx.dailyflow.capture.CapturePermission
+import com.knoxx.dailyflow.capture.NotificationPermission
 import com.knoxx.dailyflow.ui.ask.AskScreen
 import com.knoxx.dailyflow.ui.ask.AskViewModel
 import com.knoxx.dailyflow.ui.calendar.CalendarScreen
@@ -146,7 +147,12 @@ fun DailyFlowApp() {
                         onEnableCapture = { context.startActivity(CapturePermission.settingsIntent()) },
                         onManageApps = { },
                         onOpenMemories = { },
-                        onErase = vm::eraseEverything
+                        onErase = vm::eraseEverything,
+                        onSync = vm::sync,
+                        onStopSync = vm::stopSync,
+                        onNotificationAccess = {
+                            context.startActivity(NotificationPermission.settingsIntent())
+                        }
                     )
                 }
 

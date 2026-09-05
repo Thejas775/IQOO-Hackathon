@@ -297,7 +297,10 @@ private fun Composer(
         Modifier
             .fillMaxWidth()
             .background(Paper)
-            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 16.dp)
+            // The nav bar floats over every screen, so the composer has to
+            // clear it explicitly. Without this the whole input row sits
+            // underneath the tab bar and looks like it is simply missing.
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 96.dp)
     ) {
         Row(
             Modifier.fillMaxWidth(),

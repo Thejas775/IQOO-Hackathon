@@ -124,6 +124,15 @@ class TodayViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun generateBriefIfNeeded(todays: List<MemoryEntity>) {
         if (_brief.value != null || briefJob?.isActive == true || todays.isEmpty()) return
+
+        // Only when the engine is *already* loaded. Opening Today must not
+        // trigger a multi-gigabyte model load: it would cost ten seconds of
+        // blank screen and push the process to the top of the kill list before
+        // the user has asked for anything. The card falls back to a line
+        // derived from the counts until something else — a sync, or Ask —
+        // has loaded the model, at which point the brief appears for free.
+        if (GemmaEngine.state.value != GemmaEngine.State.Ready) return
+
         briefJob = viewModelScope.launch {
             _brief.value = BriefGenerator.morningBrief(getApplication(), todays)
         }

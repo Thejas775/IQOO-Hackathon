@@ -9,65 +9,65 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
-/**
- * Decides when extraction runs.
- *
- * Two mechanisms, and the split matters. A **one-time** request is kicked
- * whenever a capture lands, which is what makes memories appear within
- * seconds; WorkManager's 15-minute floor applies only to periodic work, so
- * Wick's quarter-hour lag was never a platform limit, just a consequence of
- * batching for the network. A **periodic** run then acts purely as a safety
- * net for kicks lost to a process death or a Doze window.
- */
 object ExtractionScheduler {
 
-    private const val IMMEDIATE_WORK = "dailyflow_extraction_now"
-    private const val SAFETY_NET_WORK = "dailyflow_extraction_safety_net"
+    private const val PERIODIC_WORK = "dailyflow_extraction_periodic"
+    private const val MANUAL_WORK = "dailyflow_extraction_now"
 
     /**
-     * Battery-not-low is the only constraint. Notably absent: any network
-     * constraint. Wick required NetworkType.CONNECTED because extraction was
-     * an API call; requiring connectivity here would mean the offline app
-     * stops understanding things whenever it goes offline, which is precisely
-     * backwards.
+     * 15 minutes — WorkManager's own floor, and independently the right number
+     * here. Loading the model costs around 30 seconds, so a shorter period
+     * would spend most of its time loading rather than working.
+     */
+    private const val PERIOD_MINUTES = 15L
+
+    /**
+     * No network constraint, deliberately: extraction is entirely on-device,
+     * and requiring connectivity would mean the offline app stops
+     * understanding things the moment it goes offline.
+     *
+     * Battery-not-low is kept. A 30-second GPU load on a nearly flat phone is
+     * exactly the work a user would want deferred.
      */
     private val constraints = Constraints.Builder()
         .setRequiresBatteryNotLow(true)
         .build()
 
-    /**
-     * Called after each capture is stored.
-     *
-     * KEEP, not REPLACE: the worker drains the entire queue, so a run already
-     * in flight will pick up this row too. REPLACE would cancel that run
-     * mid-inference and start over, which at ~3 seconds per row means a busy
-     * period could livelock, forever restarting and never finishing.
-     */
-    fun kick(context: Context) {
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            IMMEDIATE_WORK,
-            ExistingWorkPolicy.KEEP,
-            OneTimeWorkRequestBuilder<ExtractionWorker>()
+    /** Started once from Application. KEEP so an existing schedule survives
+     *  app restarts rather than resetting its interval every launch. */
+    fun schedulePeriodic(context: Context) {
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            PERIODIC_WORK,
+            ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<ExtractionWorker>(PERIOD_MINUTES, TimeUnit.MINUTES)
                 .setConstraints(constraints)
                 .build()
         )
     }
 
-    /** Started once from Application. */
-    fun scheduleSafetyNet(context: Context) {
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            SAFETY_NET_WORK,
-            ExistingPeriodicWorkPolicy.KEEP,
-            PeriodicWorkRequestBuilder<ExtractionWorker>(30, TimeUnit.MINUTES)
-                .setConstraints(constraints)
-                .build()
+    /**
+     * The "Read my day" button.
+     *
+     * KEEP rather than REPLACE: the worker drains the whole queue, so a run
+     * already in flight will pick up everything anyway, and REPLACE would
+     * cancel it mid-inference and reload the model from scratch.
+     *
+     * No battery constraint here — the user asked for it explicitly, and
+     * silently doing nothing because the battery is low would read as the
+     * button being broken.
+     */
+    fun runNow(context: Context) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            MANUAL_WORK,
+            ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<ExtractionWorker>().build()
         )
     }
 
     fun cancelAll(context: Context) {
         WorkManager.getInstance(context).apply {
-            cancelUniqueWork(IMMEDIATE_WORK)
-            cancelUniqueWork(SAFETY_NET_WORK)
+            cancelUniqueWork(PERIODIC_WORK)
+            cancelUniqueWork(MANUAL_WORK)
         }
     }
 }

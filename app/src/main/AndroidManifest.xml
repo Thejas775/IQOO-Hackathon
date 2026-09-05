@@ -13,6 +13,16 @@
          without it the tab still works, showing captured items only. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
 
+    <!-- Extraction runs as a foreground service. Without the promotion, loading
+         a multi-gigabyte model from a background job triggers a system-wide
+         low-memory event and the process is killed mid-load. dataSync is the
+         correct subtype: this processes the user's own already-captured data. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Required on Android 13+ for the foreground service's own notification. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".DailyFlowApplication"
         android:allowBackup="false"
@@ -52,6 +62,30 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/capture_service_config" />
         </service>
+
+        <!--
+            Catches messages that arrive and are never opened -- the case where
+            a commitment is most likely to be forgotten, and invisible to the
+            accessibility service because that only sees an app while it is on
+            screen. Its own separate grant, so enabling screen capture does not
+            silently enable this too.
+        -->
+        <service
+            android:name=".capture.NotificationCaptureService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- WorkManager promotes ExtractionWorker to a foreground service, so
+             its runtime service must declare the matching type. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

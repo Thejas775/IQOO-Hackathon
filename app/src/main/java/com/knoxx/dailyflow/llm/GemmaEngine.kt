@@ -2,10 +2,14 @@ package com.knoxx.dailyflow.llm
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -118,13 +122,48 @@ object GemmaEngine {
         }
     }
 
-    /** Frees the model. Worth calling under memory pressure — it reloads on
-     *  next use, at the cost of the load time. */
+    /** Frees the model. Reloads on next use, at the cost of the load time. */
     suspend fun unload() = mutex.withLock {
         engine?.close()
         engine = null
         _state.value = State.Absent
     }
+
+    /**
+     * Held while a background pass owns the engine.
+     *
+     * The activity and the extraction worker share this one engine, so
+     * backgrounding the app during a pass would otherwise unload the model out
+     * from under it — the unload waits on the mutex, frees the engine, and the
+     * worker's next inference reloads it, thrashing several gigabytes in a
+     * loop. A pinned engine ignores lifecycle unload requests; the pass
+     * releases it itself when it finishes.
+     */
+    private var pinned = false
+
+    fun pin() {
+        pinned = true
+    }
+
+    fun unpin() {
+        pinned = false
+    }
+
+    /**
+     * Fire-and-forget unload for lifecycle callbacks.
+     *
+     * Deliberately not tied to the activity's own scope: that scope is
+     * cancelled when the activity is destroyed, which is exactly the moment
+     * this needs to run, so the unload would be cancelled before it took the
+     * mutex and several gigabytes would stay resident in a process about to be
+     * backgrounded.
+     */
+    fun requestUnload() {
+        if (pinned) return
+        ownScope.launch { unload() }
+    }
+
+    private val ownScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Suspends until the model is loaded or known unavailable, without
      *  holding the lock — for a UI that wants to show a loading state. */

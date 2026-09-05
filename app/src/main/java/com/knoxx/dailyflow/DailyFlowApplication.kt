@@ -5,6 +5,7 @@ import com.knoxx.dailyflow.data.CapturePreferences
 import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.ml.EmbeddingEngine
+import com.knoxx.dailyflow.work.ExtractionNotification
 import com.knoxx.dailyflow.work.ExtractionScheduler
 
 /**
@@ -13,8 +14,11 @@ import com.knoxx.dailyflow.work.ExtractionScheduler
  * This matters because the accessibility service and the activity are separate
  * entry points into the same process, and either can be first: the service
  * starts at boot if capture was left on, long before anyone opens the app.
- * Initialising here rather than in the activity means a capture arriving
- * before the UI has ever been shown still finds a working repository.
+ *
+ * Nothing here loads Gemma. The model is only ever loaded inside the promoted
+ * foreground pass (see [ExtractionScheduler]) or when the user asks something
+ * in Ask — loading it on app start would cost ten seconds and several
+ * gigabytes before anyone had asked for anything.
  */
 class DailyFlowApplication : Application() {
     override fun onCreate() {
@@ -23,17 +27,17 @@ class DailyFlowApplication : Application() {
         CapturePreferences.init(this)
         CaptureStats.init(this)
 
-        // The repository signals that something was stored; deciding this
-        // means "run extraction" belongs here, so the data layer never has to
-        // know WorkManager exists.
-        MemoryRepository.setOnCaptureStored { ExtractionScheduler.kick(this) }
-        ExtractionScheduler.scheduleSafetyNet(this)
-
-        // Wired here rather than inside the repository so the data layer keeps
-        // no opinion about which model produces vectors — it only records
-        // which one did, so a future swap is detectable rather than silent.
+        // Cheap and lazy: the embedder is a few hundred megabytes at most and
+        // only loads on first use, so wiring it here costs nothing until
+        // something actually asks for a vector.
         MemoryRepository.setEmbedder(EmbeddingEngine.MODEL_ID) { text ->
             EmbeddingEngine.embed(this, text)
         }
+
+        // Every 15 minutes, promoted to a foreground service: load, drain the
+        // queue, unload. Steady-state memory between passes is zero, which is
+        // what makes running a multi-gigabyte model on a schedule affordable.
+        ExtractionNotification.ensureChannel(this)
+        ExtractionScheduler.schedulePeriodic(this)
     }
 }

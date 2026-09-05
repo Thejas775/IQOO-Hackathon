@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.knoxx.dailyflow.capture.CapturePermission
+import com.knoxx.dailyflow.capture.NotificationPermission
 import com.knoxx.dailyflow.data.CapturePreferences
 import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
@@ -58,6 +59,8 @@ import com.knoxx.dailyflow.ui.theme.PillShape
 import com.knoxx.dailyflow.ui.theme.Violet
 import com.knoxx.dailyflow.ui.theme.VioletTint
 import com.knoxx.dailyflow.ui.theme.VioletTintStrong
+import com.knoxx.dailyflow.work.ExtractionRunner
+import com.knoxx.dailyflow.work.ExtractionScheduler
 import java.util.Calendar
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -74,22 +77,42 @@ data class YouState(
     val histogram: List<Int> = emptyList(),
     val memoryCount: Int = 0,
     val approximateBytes: Long = 0,
-    val allowedAppCount: Int = 0
+    val allowedAppCount: Int = 0,
+    val pendingCount: Int = 0,
+    val sync: ExtractionRunner.Progress = ExtractionRunner.Progress(),
+    val notificationAccess: Boolean = false
 )
 
 class YouViewModel(app: Application) : AndroidViewModel(app) {
 
     private val twelveHoursAgo = System.currentTimeMillis() - 12 * 60 * 60 * 1000L
 
-    val state: StateFlow<YouState> = combine(
+    private val device = combine(
         CapturePreferences.isPaused,
         CaptureStats.eventsSeen,
         CaptureStats.capturingSince,
         MemoryRepository.observeMemoryCount(),
         MemoryRepository.observeTimestampsSince(twelveHoursAgo)
     ) { paused, events, since, memories, timestamps ->
+        listOf(paused, events, since, memories, timestamps)
+    }
+
+    private val work = combine(
+        MemoryRepository.observePendingCount(),
+        ExtractionRunner.progress
+    ) { pending, progress -> pending to progress }
+
+    val state: StateFlow<YouState> = combine(device, work) { d, w ->
+        @Suppress("UNCHECKED_CAST")
+        val paused = d[0] as Boolean
+        val events = d[1] as Long
+        val since = d[2] as Long
+        val memories = d[3] as Int
+        @Suppress("UNCHECKED_CAST")
+        val timestamps = d[4] as List<Long>
         YouState(
             captureEnabled = CapturePermission.isEnabled(getApplication()),
+            notificationAccess = NotificationPermission.isEnabled(getApplication()),
             paused = paused,
             eventsSeen = events,
             hoursOn = if (since > 0) ((System.currentTimeMillis() - since) / 3_600_000L).toInt() else 0,
@@ -99,9 +122,18 @@ class YouViewModel(app: Application) : AndroidViewModel(app) {
             // database file: the file includes indices and free pages, so its
             // size would overstate what the user could actually erase.
             approximateBytes = 0L,
-            allowedAppCount = 0
+            allowedAppCount = 0,
+            pendingCount = w.first,
+            sync = w.second
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YouState())
+
+    /** Enqueues a promoted one-time pass rather than running inline: the
+     *  foreground promotion is what keeps the model load from getting the
+     *  process killed, and only WorkManager can grant it. */
+    fun sync() = ExtractionScheduler.runNow(getApplication())
+
+    fun stopSync() = ExtractionScheduler.cancelAll(getApplication())
 
     /** Twelve buckets, oldest first, so the bar chart reads left to right. */
     private fun bucketByHour(timestamps: List<Long>): List<Int> {
@@ -132,6 +164,9 @@ fun YouScreen(
     onManageApps: () -> Unit,
     onOpenMemories: () -> Unit,
     onErase: () -> Unit,
+    onSync: () -> Unit,
+    onStopSync: () -> Unit,
+    onNotificationAccess: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -148,6 +183,7 @@ fun YouScreen(
         }
 
         item { CaptureCard(state, onTogglePause, onEnableCapture, Modifier.padding(horizontal = 20.dp)) }
+        item { SyncCard(state, onSync, onStopSync, Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)) }
         item { Identity(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) }
 
         item {
@@ -156,6 +192,17 @@ fun YouScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 NavRow("Memories", "What DailyFlow understood from your day", "${state.memoryCount}", onOpenMemories)
+                NavRow(
+                    "Notification access",
+                    // Says what it buys, not what it is: the accessibility
+                    // service only sees an app while it is open, so an unread
+                    // message — the thing most likely to be forgotten — is
+                    // invisible without this.
+                    if (state.notificationAccess) "On — catches messages you never opened"
+                    else "Off — unopened messages are missed",
+                    if (state.notificationAccess) "ON" else null,
+                    onNotificationAccess
+                )
                 NavRow("Manage app access", "Choose which apps DailyFlow may read", null, onManageApps)
                 NavRow("Connect an assistant", "Coming later — MCP link and password", null) { }
             }
@@ -233,6 +280,78 @@ private fun CaptureCard(
                     PrimaryChip(if (state.paused) "Resume" else "Pause", onTogglePause)
                 } else {
                     PrimaryChip("Turn on", onEnable)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * "Read my day" — runs extraction now, while the app is on screen.
+ *
+ * This is the only way memories get understood. Capture keeps collecting in
+ * the background, but Gemma is only ever loaded here or in Ask, because a
+ * multi-gigabyte load from a background job gets the process killed and takes
+ * the rest of the phone down with it. Surfacing the pending count makes that
+ * limitation legible rather than mysterious.
+ */
+@Composable
+private fun SyncCard(
+    state: YouState,
+    onSync: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val sync = state.sync
+    FlowCard(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        when {
+                            sync.running -> "Reading your day…"
+                            state.pendingCount > 0 -> "${state.pendingCount} waiting to be read"
+                            else -> "Everything is read"
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Ink
+                    )
+                    Text(
+                        sync.message
+                            ?: if (sync.running) "${sync.done} of ${sync.total} · on this device"
+                            else "Gemma loads only while this app is open",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSecondary,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                }
+                if (sync.running) {
+                    SecondaryChip("Stop", onClick = onStop)
+                } else {
+                    PrimaryChip("Read my day", onClick = onSync)
+                }
+            }
+
+            if (sync.running && sync.total > 0) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(PaperSunken)
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(sync.fraction)
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Violet)
+                    )
                 }
             }
         }
