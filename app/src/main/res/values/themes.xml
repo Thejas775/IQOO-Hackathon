@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.DailyFlow" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        Light-only, matching the Compose theme. The window background is set to
+        DailyFlow's own paper tone rather than the platform default grey — the
+        window is painted before Compose draws its first frame, so leaving it
+        at the default produces a visible grey flash on every cold start.
+
+        There is deliberately no values-night variant: the palette is designed
+        against a light ground (see ui/theme/Theme.kt).
+    -->
+    <style name="Theme.DailyFlow" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>
