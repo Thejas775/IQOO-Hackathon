@@ -33,6 +33,11 @@ object MemorySearch {
      *  would invite the model to answer from something unrelated. */
     private const val MIN_SIMILARITY = 0.35f
 
+    /** How many recent memories to show the model when nothing matched.
+     *  Smaller than TOP_K: unmatched context is a weaker signal, and a long
+     *  list of irrelevant memories invites the model to answer from one. */
+    private const val RECENT_FALLBACK = 4
+
     data class Hit(val memory: MemoryEntity, val score: Float)
 
     suspend fun search(context: Context, question: String): List<Hit> {
@@ -46,11 +51,27 @@ object MemorySearch {
         } else {
             null
         }
-        return if (queryVector != null) {
+        val ranked = if (queryVector != null) {
             rankByVector(queryVector, EmbeddingEngine.modelId(context), candidates)
         } else {
             rankByKeyword(question, candidates)
         }
+
+        // Nothing matched, so fall back to the most recent memories rather
+        // than handing the model an empty list.
+        //
+        // An empty list makes it refuse, which is right for "what did I
+        // promise Rahul" when Rahul was never mentioned, but wrong for "hi"
+        // and for anything phrased differently from the summary it is
+        // actually about. Keyword overlap misses constantly at this scale:
+        // "what's still open?" reduces to the single term "open" once
+        // stopwords are removed, and matches nothing unless a summary happens
+        // to contain that exact word. Greetings reduce to nothing at all,
+        // since tokenise() drops words of two characters or fewer.
+        //
+        // Scored 0f to mark them as context rather than matches, so the
+        // caller can tell the difference and not cite them as sources.
+        return ranked.ifEmpty { candidates.take(RECENT_FALLBACK).map { Hit(it, 0f) } }
     }
 
     private fun rankByVector(

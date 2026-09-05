@@ -124,7 +124,7 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                     text = if (ok && builder.isNotBlank()) builder.toString()
                     else "The model isn't loaded, so I can't answer that yet.",
                     // Only cited when the answer actually came from memories.
-                    citation = if (ok && hits.isNotEmpty()) AskPrompt.citation(hits) else null
+                    citation = if (ok) AskPrompt.citation(hits) else null
                 )
             }
             _state.value = _state.value.copy(thinking = false)

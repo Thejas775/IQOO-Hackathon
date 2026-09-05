@@ -179,15 +179,25 @@ interface MemoryDao {
     fun observeDistinctProjects(): Flow<List<String>>
 
     // ── Ask / retrieval ──────────────────────────────────────────────────
-
     /**
      * Candidate pool for RAG. Bounded and newest-first rather than unbounded:
      * similarity is scored in Kotlin over these rows, so an unbounded fetch
      * would deserialise every vector ever stored on each question asked.
+     *
+     * Deliberately does NOT require an embedding. It used to, which made Ask
+     * permanently unable to answer: with no embedder installed nothing was
+     * ever embedded, so this returned zero rows for every question, and the
+     * keyword fallback — the entire point of which is to work without
+     * embeddings — was never reached, because the query feeding it filtered
+     * on the thing it exists to do without. Measured on a real device: 16
+     * memories with summaries, 0 with embeddings, every question unanswerable.
+     *
+     * Rows without a vector are skipped by the vector path itself, which
+     * null-checks each one, so nothing downstream needs this filter.
      */
     @Query(
         "SELECT * FROM memories WHERE isLoop = 1 AND summary IS NOT NULL " +
-            "AND embedding IS NOT NULL ORDER BY timestamp DESC LIMIT :limit"
+            "ORDER BY timestamp DESC LIMIT :limit"
     )
     suspend fun getRetrievalCandidates(limit: Int): List<MemoryEntity>
 
