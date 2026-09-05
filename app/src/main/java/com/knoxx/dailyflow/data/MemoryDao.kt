@@ -1,0 +1,232 @@
+package com.knoxx.dailyflow.data
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+/**
+ * Every read and write against the memory store.
+ *
+ * Updates are column-scoped `@Query`s rather than `@Update` on the whole row.
+ * Extraction and embedding run independently and can interleave on the same
+ * row; a full-row replace from a stale in-memory copy would silently clobber
+ * whichever column the other one just wrote.
+ */
+@Dao
+interface MemoryDao {
+
+    @Insert
+    suspend fun insert(memory: MemoryEntity): Long
+
+    @Query("SELECT * FROM memories WHERE id = :id")
+    suspend fun getById(id: Long): MemoryEntity?
+
+    // ── pipeline queues ──────────────────────────────────────────────────
+
+    @Query("SELECT * FROM memories WHERE embedding IS NULL ORDER BY timestamp ASC")
+    suspend fun getPendingEmbedding(): List<MemoryEntity>
+
+    /** Oldest first, so a backlog drains in the order things actually
+     *  happened — a memory arriving out of order reads as a bug to the user. */
+    @Query("SELECT * FROM memories WHERE extracted = 0 ORDER BY timestamp ASC")
+    suspend fun getPendingExtraction(): List<MemoryEntity>
+
+    @Query("SELECT COUNT(*) FROM memories WHERE extracted = 0")
+    fun observePendingExtractionCount(): Flow<Int>
+
+    /**
+     * Takes a pre-packed ByteArray, not a FloatArray: Room expands a raw
+     * FloatArray parameter into one bind argument per element instead of
+     * routing it through FloatArrayConverter, which produces invalid SQL.
+     */
+    @Query("UPDATE memories SET embedding = :embedding, embeddingModel = :model WHERE id = :id")
+    suspend fun updateEmbedding(id: Long, embedding: ByteArray, model: String)
+
+    @Query(
+        "UPDATE memories SET extracted = 1, isLoop = :isLoop, summary = :summary, " +
+            "sourceQuote = :sourceQuote, direction = :direction, dueAt = :dueAt, " +
+            "dueAtExplicit = :dueAtExplicit, personName = :personName, " +
+            "category = :category, projectName = :projectName WHERE id = :id"
+    )
+    suspend fun updateExtraction(
+        id: Long,
+        isLoop: Boolean?,
+        summary: String?,
+        sourceQuote: String?,
+        direction: String?,
+        dueAt: Long?,
+        dueAtExplicit: Boolean,
+        personName: String?,
+        category: String?,
+        projectName: String?
+    )
+
+    /** Marks a row processed without surfacing anything — the common case. */
+    @Query("UPDATE memories SET extracted = 1, isLoop = 0 WHERE id = :id")
+    suspend fun markNotAMemory(id: Long)
+
+    // ── dedup ────────────────────────────────────────────────────────────
+
+    /** Persisted rather than an in-memory cache: an in-process "recently
+     *  seen" map resets on every process restart, which defeats the purpose
+     *  for a screen that legitimately sits unchanged for hours. */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM memories WHERE packageName = :packageName " +
+            "AND rawText = :rawText AND timestamp > :since)"
+    )
+    suspend fun hasRecentExactText(packageName: String, rawText: String, since: Long): Boolean
+
+    /** No default argument: Room generates the implementation and does not
+     *  carry Kotlin defaults through reliably. Callers pass the bound. */
+    @Query(
+        "SELECT embedding FROM memories WHERE packageName = :packageName " +
+            "AND timestamp > :since AND embedding IS NOT NULL LIMIT :limit"
+    )
+    suspend fun getRecentEmbeddings(packageName: String, since: Long, limit: Int): List<ByteArray>
+
+    @Query("SELECT summary FROM memories WHERE isLoop = 1 AND summary IS NOT NULL")
+    suspend fun getAllSummaries(): List<String>
+
+    // ── Today ────────────────────────────────────────────────────────────
+
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND dueAt >= :start AND dueAt < :end " +
+            "ORDER BY dueAt ASC"
+    )
+    fun observeDueBetween(start: Long, end: Long): Flow<List<MemoryEntity>>
+
+    @Query("SELECT COUNT(*) FROM memories WHERE isLoop = 1 AND dueAt >= :start AND dueAt < :end")
+    fun observeCountDueBetween(start: Long, end: Long): Flow<Int>
+
+    /** Open obligations only — the "2 open" in the section header and the
+     *  denominator of the morning brief's ring. */
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND commitmentDone = 0 " +
+            "AND direction IN ('SELF_PROMISE', 'THEY_ASKED') ORDER BY dueAt ASC"
+    )
+    fun observeOpenCommitments(): Flow<List<MemoryEntity>>
+
+    @Query(
+        "SELECT COUNT(*) FROM memories WHERE isLoop = 1 AND commitmentDone = 1 " +
+            "AND dueAt >= :start AND dueAt < :end"
+    )
+    fun observeKeptBetween(start: Long, end: Long): Flow<Int>
+
+    @Query("UPDATE memories SET commitmentDone = :done WHERE id = :id")
+    suspend fun setCommitmentDone(id: Long, done: Boolean)
+
+    // ── Calendar ─────────────────────────────────────────────────────────
+
+    /** Whole-month fetch so the grid can be dotted in one query rather than
+     *  31 separate day queries. */
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND dueAt >= :start AND dueAt < :end " +
+            "ORDER BY dueAt ASC"
+    )
+    fun observeMonth(start: Long, end: Long): Flow<List<MemoryEntity>>
+
+    // ── People ───────────────────────────────────────────────────────────
+
+    /** Newest-contact-first. MAX(timestamp) needs the GROUP BY here rather
+     *  than an outer ORDER BY: SQLite only guarantees the aggregate value,
+     *  not that the surrounding rows come back sorted by it. */
+    @Query(
+        "SELECT personName FROM memories WHERE isLoop = 1 AND personName IS NOT NULL " +
+            "GROUP BY personName ORDER BY MAX(timestamp) DESC"
+    )
+    fun observeDistinctPeople(): Flow<List<String>>
+
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND personName = :person " +
+            "ORDER BY timestamp DESC"
+    )
+    fun observeByPerson(person: String): Flow<List<MemoryEntity>>
+
+    /** The three counters in the Person header, in one query rather than
+     *  three round trips. */
+    /** SUM returns NULL over zero rows, so the counts are wrapped in IFNULL —
+     *  otherwise a person with no matching rows yields nulls into non-null
+     *  Int fields and Room fails at runtime rather than returning zeroes.
+     *  `openCount` rather than `open`, which reads badly as a Kotlin property. */
+    @Query(
+        "SELECT " +
+            "IFNULL(SUM(CASE WHEN commitmentDone = 0 AND direction IN ('SELF_PROMISE','THEY_ASKED') THEN 1 ELSE 0 END), 0) AS openCount, " +
+            "IFNULL(SUM(CASE WHEN commitmentDone = 1 THEN 1 ELSE 0 END), 0) AS kept, " +
+            "COUNT(*) AS total, " +
+            "MAX(timestamp) AS lastAt " +
+            "FROM memories WHERE isLoop = 1 AND personName = :person"
+    )
+    fun observePersonStats(person: String): Flow<PersonStats>
+
+    @Query("SELECT COUNT(*) FROM memories WHERE isLoop = 1 AND personName = :person")
+    suspend fun countForPerson(person: String): Int
+
+    // ── Projects (data kept, no UI ships) ────────────────────────────────
+
+    @Query(
+        "SELECT projectName FROM memories WHERE isLoop = 1 AND projectName IS NOT NULL " +
+            "GROUP BY projectName ORDER BY MAX(timestamp) DESC"
+    )
+    fun observeDistinctProjects(): Flow<List<String>>
+
+    // ── Ask / retrieval ──────────────────────────────────────────────────
+
+    /**
+     * Candidate pool for RAG. Bounded and newest-first rather than unbounded:
+     * similarity is scored in Kotlin over these rows, so an unbounded fetch
+     * would deserialise every vector ever stored on each question asked.
+     */
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND summary IS NOT NULL " +
+            "AND embedding IS NOT NULL ORDER BY timestamp DESC LIMIT :limit"
+    )
+    suspend fun getRetrievalCandidates(limit: Int): List<MemoryEntity>
+
+    // ── Brief / digest ───────────────────────────────────────────────────
+
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND summary IS NOT NULL " +
+            "AND timestamp >= :start AND timestamp < :end ORDER BY timestamp ASC"
+    )
+    suspend fun getCapturedBetween(start: Long, end: Long): List<MemoryEntity>
+
+    // ── Reminders ────────────────────────────────────────────────────────
+
+    @Query(
+        "SELECT * FROM memories WHERE isLoop = 1 AND dueAt IS NOT NULL " +
+            "AND reminderSent = 0 ORDER BY dueAt ASC"
+    )
+    suspend fun getPendingReminders(): List<MemoryEntity>
+
+    @Query("UPDATE memories SET reminderSent = 1 WHERE id = :id")
+    suspend fun markReminderSent(id: Long)
+
+    // ── Profile / capture stats ──────────────────────────────────────────
+
+    @Query("SELECT COUNT(*) FROM memories")
+    fun observeTotalCaptured(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM memories WHERE isLoop = 1")
+    fun observeMemoryCount(): Flow<Int>
+
+    /** Feeds the hourly histogram on the You screen. */
+    @Query("SELECT timestamp FROM memories WHERE timestamp >= :since")
+    fun observeTimestampsSince(since: Long): Flow<List<Long>>
+
+    @Query("SELECT SUM(LENGTH(rawText)) FROM memories")
+    fun observeApproximateBytes(): Flow<Long?>
+
+    // ── Erase ────────────────────────────────────────────────────────────
+
+    @Query("DELETE FROM memories")
+    suspend fun clearAll()
+}
+
+/** Projection for [MemoryDao.observePersonStats]. */
+data class PersonStats(
+    val openCount: Int,
+    val kept: Int,
+    val total: Int,
+    val lastAt: Long?
+)
