@@ -60,14 +60,19 @@ import com.knoxx.dailyflow.ui.theme.Violet
 import com.knoxx.dailyflow.ui.theme.VioletTint
 
 
-/** How tall the timeline window is — about two cards.
+/** How tall the timeline window is — roughly three cards.
  *
- *  Two rather than three because a timeline card is variable height: a long
- *  summary wraps to three lines and a short one to one, so a height chosen to
- *  fit three exactly would show two and a sliver on a wordy day. Two fits
- *  comfortably in every case, and the partial third row visible underneath is
- *  what tells the user the list scrolls. */
-private val TIMELINE_WINDOW_HEIGHT = 260.dp
+ *  Timeline cards are variable height, so this cannot fit a whole number of
+ *  them: a long summary wraps to three lines and a short one to one. Landing
+ *  deliberately between counts is better than aiming at an exact fit and
+ *  missing, because the partial row at the bottom edge is what tells the user
+ *  the list scrolls at all.
+ *
+ *  Raised from 260dp, which was honest about scrolling but showed too little
+ *  of the day at a glance. The constraint on the upper end is the people row
+ *  underneath: it exists to be visible without scrolling, since it is the only
+ *  way into the Person pages. */
+private val TIMELINE_WINDOW_HEIGHT = 380.dp
 
 @Composable
 fun TodayScreen(
