@@ -20,6 +20,49 @@ object BriefGenerator {
      * showing "I couldn't generate a brief" in the largest text on the home
      * screen would be worse than quietly showing something true.
      */
+    /**
+     * The line on a Person page, in Gemma's words.
+     *
+     * The card carrying it is labelled "GEMMA · OFFLINE RECALL" and until now
+     * nothing ever set it — it always showed a sentence derived from the open
+     * and kept counts, under a heading claiming the model wrote it. On an app
+     * whose whole argument is that its claims are literally true, a label that
+     * credits a model that never ran is the one kind of wrong worth fixing
+     * before anything cosmetic.
+     */
+    suspend fun relationshipLine(
+        context: Context,
+        person: String,
+        memories: List<MemoryEntity>
+    ): String? {
+        if (memories.isEmpty()) return null
+
+        val prompt = buildString {
+            appendLine(
+                "You are DailyFlow, a private memory on one person's phone. Below is everything " +
+                    "the owner's phone has recorded involving $person. Write ONE sentence, " +
+                    "addressed to \"you\", describing where things stand between them."
+            )
+            appendLine()
+            appendLine("Rules:")
+            appendLine("- Use only what is listed. Never invent a conversation or a date.")
+            appendLine("- Say what is outstanding, or that nothing is.")
+            appendLine("- No greeting, no preamble, no list. Just the sentence.")
+            appendLine()
+            appendLine("WITH $person:")
+            memories.take(12).forEach { memory ->
+                val state = if (memory.commitmentDone) "done" else "open"
+                appendLine("- [$state] ${memory.summary}")
+            }
+            appendLine()
+            appendLine("The sentence:")
+        }
+
+        return GemmaEngine.complete(context, prompt)
+            ?.let(::trimToSummary)
+            ?.takeIf { it.isNotBlank() }
+    }
+
     suspend fun morningBrief(context: Context, todays: List<MemoryEntity>): String? {
         if (todays.isEmpty()) return null
 

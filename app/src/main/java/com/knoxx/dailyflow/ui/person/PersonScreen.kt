@@ -38,6 +38,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.knoxx.dailyflow.data.MemoryEntity
 import com.knoxx.dailyflow.data.MemoryRepository
+import com.knoxx.dailyflow.llm.BriefGenerator
+import com.knoxx.dailyflow.llm.GemmaEngine
 import com.knoxx.dailyflow.data.PersonStats
 import com.knoxx.dailyflow.ui.DateLabels
 import com.knoxx.dailyflow.ui.FlowCard
@@ -112,6 +114,25 @@ class PersonViewModel(app: Application) : AndroidViewModel(app) {
                         commitments = commitments,
                         interactions = interactions
                     )
+
+                    // Generated once per person, and only when the engine is
+                    // already loaded. Opening a Person page must not trigger a
+                    // multi-gigabyte load — the card falls back to a line
+                    // derived from the counts until something else has loaded
+                    // the model, at which point the real line appears for free.
+                    // Same bargain the morning brief makes.
+                    if (_state.value.relationshipLine == null &&
+                        GemmaEngine.state.value == GemmaEngine.State.Ready
+                    ) {
+                        val line = BriefGenerator.relationshipLine(
+                            getApplication(),
+                            name,
+                            commitments + interactions
+                        )
+                        if (line != null && _state.value.name == name) {
+                            _state.value = _state.value.copy(relationshipLine = line)
+                        }
+                    }
                 }
         }
     }
@@ -161,7 +182,7 @@ fun PersonScreen(
         if (rows.isEmpty()) {
             item {
                 Text(
-                    if (showCommitments) "Nothing outstanding with ${state.name}."
+                    if (showCommitments) "No commitments with ${state.name} yet."
                     else "No other moments with ${state.name} yet.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = InkSecondary,
