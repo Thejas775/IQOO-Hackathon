@@ -314,6 +314,17 @@ interface MemoryDao {
     @Query("UPDATE memories SET reminderSent = 1 WHERE id = :id")
     suspend fun markReminderSent(id: Long)
 
+    // ── Cloud sync ───────────────────────────────────────────────────────
+    // Copied from Wick unchanged. syncedToCloud was already carried on the
+    // entity from the start precisely so this could be added without a
+    // migration.
+
+    @Query("SELECT * FROM memories WHERE isLoop = 1 AND syncedToCloud = 0")
+    suspend fun getPendingCloudSync(): List<MemoryEntity>
+
+    @Query("UPDATE memories SET syncedToCloud = 1 WHERE id = :id")
+    suspend fun markSyncedToCloud(id: Long)
+
     // ── Profile / capture stats ──────────────────────────────────────────
 
     @Query("SELECT COUNT(*) FROM memories")

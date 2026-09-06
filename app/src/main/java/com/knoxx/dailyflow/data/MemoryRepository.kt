@@ -453,6 +453,13 @@ object MemoryRepository {
     suspend fun pendingReminders() = dao.getPendingReminders()
     suspend fun markReminderSent(id: Long) = dao.markReminderSent(id)
 
+    suspend fun getPendingCloudSync() = dao.getPendingCloudSync()
+    suspend fun markSyncedToCloud(id: Long) = dao.markSyncedToCloud(id)
+
+    /** Wick calls this clearAll; DailyFlow already had eraseAll doing the
+     *  same thing, so this is an alias rather than a second implementation. */
+    suspend fun clearAll() = eraseAll()
+
     /** "Erase all". Also clears the debounce map, so a capture already in
      *  flight cannot land a row immediately after the user wiped everything. */
     suspend fun eraseAll() {

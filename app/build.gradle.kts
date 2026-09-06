@@ -1,6 +1,23 @@
+import java.io.FileInputStream
+import java.util.Properties
+
+// Supabase and MCP settings live in local.properties (gitignored) and are
+// never committed. Same key names as Wick, because this app points at the
+// same project and the same already-deployed backend.
+val localProperties = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+val supabaseUrl: String = localProperties.getProperty("SUPABASE_URL") ?: ""
+val supabaseAnonKey: String = localProperties.getProperty("SUPABASE_ANON_KEY") ?: ""
+val mcpServerUrl: String = localProperties.getProperty("MCP_SERVER_URL") ?: ""
+val mcpAuthUrl: String = localProperties.getProperty("MCP_AUTH_URL") ?: ""
+val mcpOwnerPassword: String = localProperties.getProperty("MCP_OWNER_PASSWORD") ?: ""
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
 
@@ -20,6 +37,15 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+        buildConfigField("String", "MCP_SERVER_URL", "\"$mcpServerUrl\"")
+        buildConfigField("String", "MCP_AUTH_URL", "\"$mcpAuthUrl\"")
+        buildConfigField("String", "MCP_OWNER_PASSWORD", "\"$mcpOwnerPassword\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
@@ -39,6 +65,12 @@ android {
 }
 
 dependencies {
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.okhttp)
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.postgrest)
+    implementation(libs.supabase.auth)
+    implementation(libs.ktor.client.okhttp)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

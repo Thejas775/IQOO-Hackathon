@@ -37,6 +37,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.knoxx.dailyflow.capture.CapturePermission
 import com.knoxx.dailyflow.capture.NotificationPermission
+import com.knoxx.dailyflow.cloud.AuthRepository
+import com.knoxx.dailyflow.cloud.ConnectAssistantScreen
+import com.knoxx.dailyflow.cloud.SignInScreen
 import com.knoxx.dailyflow.debug.DebugLog
 import com.knoxx.dailyflow.ui.apps.AllowListScreen
 import com.knoxx.dailyflow.ui.apps.AllowListViewModel
@@ -81,6 +84,8 @@ fun DailyFlowApp() {
     var showMemories by remember { mutableStateOf(false) }
     var showDev by remember { mutableStateOf(false) }
     var showVoice by remember { mutableStateOf(false) }
+    var showConnect by remember { mutableStateOf(false) }
+    var showSignIn by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val modelVm: ModelSetupViewModel = viewModel()
@@ -204,6 +209,13 @@ fun DailyFlowApp() {
                         onManageApps = { showAllowList = true },
                         onOpenMemories = { showMemories = true },
                         onOpenDev = { showDev = true },
+                        onConnectAssistant = {
+                            // Signing in is a precondition for the connector,
+                            // not a separate feature: without an account there
+                            // is nothing in the cloud for an assistant to read.
+                            if (AuthRepository.currentUserId == null) showSignIn = true
+                            else showConnect = true
+                        },
                         onErase = vm::eraseEverything,
                         onSync = vm::sync,
                         onStopSync = vm::stopSync,
@@ -220,7 +232,9 @@ fun DailyFlowApp() {
         // The person detail owns the whole screen, so the tab bar is hidden
         // while it is open — showing it would suggest the detail is a fifth
         // tab, and tapping the current tab would appear to do nothing.
-        if (openPerson == null && !showAllowList && !showMemories && !showDev && !showVoice) {
+        if (openPerson == null && !showAllowList && !showMemories && !showDev &&
+            !showVoice && !showConnect && !showSignIn
+        ) {
             BottomNav(
                 current = tab,
                 onSelect = { tab = it },
@@ -293,6 +307,17 @@ fun DailyFlowApp() {
                 onStop = voiceVm::stopAndProcess,
                 onSave = voiceVm::save
             )
+        }
+
+        if (showSignIn) {
+            SignInScreen(
+                onBack = { showSignIn = false },
+                onSignedIn = { showSignIn = false; showConnect = true }
+            )
+        }
+
+        if (showConnect) {
+            ConnectAssistantScreen(onBack = { showConnect = false })
         }
     }
 
