@@ -59,6 +59,16 @@ import com.knoxx.dailyflow.ui.theme.SourceQuote
 import com.knoxx.dailyflow.ui.theme.Violet
 import com.knoxx.dailyflow.ui.theme.VioletTint
 
+
+/** How tall the timeline window is — about two cards.
+ *
+ *  Two rather than three because a timeline card is variable height: a long
+ *  summary wraps to three lines and a short one to one, so a height chosen to
+ *  fit three exactly would show two and a sliver on a wordy day. Two fits
+ *  comfortably in every case, and the partial third row visible underneath is
+ *  what tells the user the list scrolls. */
+private val TIMELINE_WINDOW_HEIGHT = 260.dp
+
 @Composable
 fun TodayScreen(
     state: TodayState,
@@ -125,15 +135,37 @@ fun TodayScreen(
         if (state.timeline.isEmpty()) {
             item { TimelineEmpty(state.pendingCount, Modifier.padding(20.dp)) }
         } else {
-            itemsIndexed(
-                items = state.timeline,
-                key = { _, memory -> "t${memory.id}" }
-            ) { index, memory ->
-                TimelineRow(
-                    memory = memory,
-                    isLast = index == state.timeline.lastIndex,
-                    onToggle = { onToggleDone(memory) }
-                )
+            item {
+                // The timeline scrolls inside its own fixed-height window
+                // rather than extending the page.
+                //
+                // A full day is often fifteen or twenty moments, and letting
+                // them run down the page pushed "People in your day" so far
+                // below the fold that it was effectively hidden — the People
+                // row is how the Person pages are reached at all, so burying
+                // it cost the whole relationship half of the app. Capping the
+                // timeline keeps both on one screen.
+                //
+                // A nested LazyColumn needs a bounded height: without one it
+                // would try to measure at infinite height inside its parent
+                // and crash. The height is fixed for exactly that reason, not
+                // only for the layout.
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(TIMELINE_WINDOW_HEIGHT)
+                ) {
+                    itemsIndexed(
+                        items = state.timeline,
+                        key = { _, memory -> "t${memory.id}" }
+                    ) { index, memory ->
+                        TimelineRow(
+                            memory = memory,
+                            isLast = index == state.timeline.lastIndex,
+                            onToggle = { onToggleDone(memory) }
+                        )
+                    }
+                }
             }
         }
 
