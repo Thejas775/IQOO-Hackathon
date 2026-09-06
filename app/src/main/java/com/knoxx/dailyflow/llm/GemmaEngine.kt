@@ -122,6 +122,30 @@ object GemmaEngine {
         }
     }
 
+
+    /**
+     * One prompt with a recorded note attached.
+     *
+     * Same lock and same fresh-conversation rule as [complete]: a voice note
+     * is judged on its own, and leaving it in history would make every later
+     * extraction prefill the whole recording.
+     */
+    suspend fun completeWithAudio(
+        context: Context,
+        audioPath: String,
+        prompt: String
+    ): String? = mutex.withLock {
+        val e = ensureLoaded(context) ?: return@withLock null
+        try {
+            e.resetConversation()
+            val builder = StringBuilder()
+            e.chatStream(prompt, audioPath = audioPath).collect { builder.append(it) }
+            builder.toString().trim()
+        } catch (t: Throwable) {
+            Log.e(TAG, "Audio inference failed", t)
+            null
+        }
+    }
     /** Streaming variant for Ask, where tokens should appear as they arrive.
      *  Holds the lock for the whole stream, so extraction waits its turn. */
     suspend fun streamInto(

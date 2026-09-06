@@ -23,6 +23,11 @@
     <!-- Required on Android 13+ for the foreground service's own notification. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Voice notes. The recording is read by Gemma on this device and never
+         uploaded, which is the whole reason the audio goes to the model
+         directly rather than through a speech recogniser. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:name=".DailyFlowApplication"
         android:allowBackup="false"

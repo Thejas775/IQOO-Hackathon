@@ -104,6 +104,12 @@ class InferenceEngine(private val context: Context) {
             modelPath = modelPath,
             backend = main.toBackend(),
             visionBackend = vision.toBackend(),
+            // Declared for the same reason as the vision backend: it costs
+            // nothing on turns that carry no audio, and the encoder cannot be
+            // added to an engine that is already loaded. Without it a voice
+            // note fails at send time, several seconds after the user has
+            // finished speaking, which is the worst moment to find out.
+            audioBackend = vision.toBackend(),
             cacheDir = context.cacheDir.path,
             maxNumTokens = maxNumTokens
         )
@@ -128,12 +134,20 @@ class InferenceEngine(private val context: Context) {
      * emission itself, which is how TTFT and decode rate get measured. Timing
      * in here would fold collector-side delay into the numbers.
      */
-    fun chatStream(userMessage: String, imagePath: String? = null): Flow<String> {
+    fun chatStream(
+        userMessage: String,
+        imagePath: String? = null,
+        audioPath: String? = null
+    ): Flow<String> {
         val conv = conversation ?: error("Engine not initialized")
-        val contents = if (imagePath != null) {
-            Contents.of(Content.ImageFile(imagePath), Content.Text(userMessage))
-        } else {
-            Contents.of(Content.Text(userMessage))
+        // Media goes first for the same reason in both cases: Gemma's
+        // multimodal template expects what is being described to precede the
+        // instruction describing it, and reversing them produces answers that
+        // ignore the attachment entirely.
+        val contents = when {
+            audioPath != null -> Contents.of(Content.AudioFile(audioPath), Content.Text(userMessage))
+            imagePath != null -> Contents.of(Content.ImageFile(imagePath), Content.Text(userMessage))
+            else -> Contents.of(Content.Text(userMessage))
         }
         return conv.sendMessageAsync(contents)
             .map { it.toString() }

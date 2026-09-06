@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,6 +58,8 @@ import com.knoxx.dailyflow.ui.theme.Paper
 import com.knoxx.dailyflow.ui.today.DraftSheet
 import com.knoxx.dailyflow.ui.today.TodayScreen
 import com.knoxx.dailyflow.ui.today.TodayViewModel
+import com.knoxx.dailyflow.ui.voice.VoiceScreen
+import com.knoxx.dailyflow.ui.voice.VoiceViewModel
 import com.knoxx.dailyflow.ui.you.YouScreen
 import com.knoxx.dailyflow.ui.you.YouViewModel
 
@@ -75,6 +80,7 @@ fun DailyFlowApp() {
     var showAllowList by remember { mutableStateOf(false) }
     var showMemories by remember { mutableStateOf(false) }
     var showDev by remember { mutableStateOf(false) }
+    var showVoice by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val modelVm: ModelSetupViewModel = viewModel()
@@ -145,7 +151,8 @@ fun DailyFlowApp() {
                         // Speaks whatever the card is showing, generated or
                         // fallback, so the button is never a dead control.
                         onPlayBrief = { speaker.speak(brief ?: state.spokenFallback()) },
-                        onDraftFollowUp = vm::draftFollowUp
+                        onDraftFollowUp = vm::draftFollowUp,
+                        onSpeak = { showVoice = true }
                     )
 
                     draft?.let { DraftSheet(it, onDismiss = vm::dismissDraft) }
@@ -213,7 +220,7 @@ fun DailyFlowApp() {
         // The person detail owns the whole screen, so the tab bar is hidden
         // while it is open — showing it would suggest the detail is a fifth
         // tab, and tapping the current tab would appear to do nothing.
-        if (openPerson == null && !showAllowList && !showMemories && !showDev) {
+        if (openPerson == null && !showAllowList && !showMemories && !showDev && !showVoice) {
             BottomNav(
                 current = tab,
                 onSelect = { tab = it },
@@ -256,6 +263,35 @@ fun DailyFlowApp() {
                 onLoadReal = devVm::loadRealPrompt,
                 onTestReminders = devVm::sendTestReminders,
                 onBenchmark = devVm::runFormatBenchmark
+            )
+        }
+
+        if (showVoice) {
+            val voiceVm: VoiceViewModel = viewModel()
+            val voiceState by voiceVm.state.collectAsState()
+            val ctx = LocalContext.current
+
+            // Asked at the moment the screen opens rather than on first tap of
+            // record: AudioRecord fails silently without the grant rather than
+            // throwing, so a missing permission would look like a broken
+            // microphone instead of a question never asked.
+            val askMic = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { granted -> DebugLog.log("voice", "RECORD_AUDIO granted=$granted") }
+
+            LaunchedEffect(Unit) {
+                val granted = ContextCompat.checkSelfPermission(
+                    ctx, android.Manifest.permission.RECORD_AUDIO
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (!granted) askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+            }
+
+            VoiceScreen(
+                state = voiceState,
+                onBack = { voiceVm.cancel(); showVoice = false },
+                onStart = voiceVm::startRecording,
+                onStop = voiceVm::stopAndProcess,
+                onSave = voiceVm::save
             )
         }
     }

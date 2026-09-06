@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -87,6 +88,7 @@ fun TodayScreen(
     briefText: String?,
     onPlayBrief: () -> Unit,
     onDraftFollowUp: (MemoryEntity) -> Unit,
+    onSpeak: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -96,7 +98,7 @@ fun TodayScreen(
         contentPadding = PaddingValues(bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        item { Header(state) }
+        item { Header(state, onSpeak) }
         if (modelMissing) {
             item { ModelBanner(onGetModel, Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp)) }
         }
@@ -190,7 +192,7 @@ fun TodayScreen(
 }
 
 @Composable
-private fun Header(state: TodayState) {
+private fun Header(state: TodayState, onSpeak: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -207,13 +209,34 @@ private fun Header(state: TodayState) {
                 color = Ink
             )
         }
-        // No account exists, so the avatar is an identity mark rather than a
-        // control — it deliberately does nothing.
-        Box(
-            Modifier.padding(top = 4.dp).size(38.dp).clip(CircleShape).background(VioletTint),
-            contentAlignment = Alignment.Center
+        Row(
+            Modifier.padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("A", style = MaterialTheme.typography.labelLarge, color = Violet, fontWeight = FontWeight(700))
+            // The one control in the header. Placed beside the avatar rather
+            // than in the tab bar because speaking a note is something done
+            // occasionally and deliberately, not a place in the app you live
+            // in — and the bar already has four tabs and the add button.
+            Box(
+                Modifier.size(38.dp).clip(CircleShape).background(Violet)
+                    .flowClickable(onSpeak),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "🎙",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White
+                )
+            }
+            // No account exists, so the avatar is an identity mark rather than
+            // a control — it deliberately does nothing.
+            Box(
+                Modifier.size(38.dp).clip(CircleShape).background(VioletTint),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("A", style = MaterialTheme.typography.labelLarge, color = Violet, fontWeight = FontWeight(700))
+            }
         }
     }
 }
