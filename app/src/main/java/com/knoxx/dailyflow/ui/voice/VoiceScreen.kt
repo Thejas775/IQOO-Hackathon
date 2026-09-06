@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -171,46 +172,51 @@ fun VoiceScreen(
     onSave: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize().background(Paper),
-        contentPadding = PaddingValues(bottom = 40.dp)
-    ) {
-        item {
-            Row(
-                Modifier.fillMaxWidth().statusBarsPadding()
-                    .padding(start = 20.dp, end = 20.dp, top = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Box(
-                    Modifier.size(36.dp).clip(MaterialTheme.shapes.medium)
-                        .background(PaperSunken).flowClickable(onBack),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("<", style = MaterialTheme.typography.titleLarge, color = Ink)
-                }
-                Text("Speak a note", style = MaterialTheme.typography.headlineSmall, color = Ink)
-            }
-        }
-
-        item {
-            Text(
-                "Say what you need to remember. Gemma reads the recording on this " +
-                    "device — the audio is never uploaded and never leaves the phone.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = InkSecondary,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)
-            )
-        }
-
-        item {
+    Column(modifier = modifier.fillMaxSize().background(Paper)) {
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding()
+                .padding(start = 20.dp, end = 20.dp, top = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Box(
-                Modifier.fillMaxWidth().padding(top = 36.dp),
+                Modifier.size(36.dp).clip(MaterialTheme.shapes.medium)
+                    .background(PaperSunken).flowClickable(onBack),
                 contentAlignment = Alignment.Center
+            ) {
+                Text("<", style = MaterialTheme.typography.titleLarge, color = Ink)
+            }
+            Text("Speak a note", style = MaterialTheme.typography.headlineSmall, color = Ink)
+        }
+
+        Text(
+            "Say what you need to remember. Gemma reads the recording on this " +
+                "device — the audio is never uploaded and never leaves the phone.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = InkSecondary,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)
+        )
+
+        // The button takes the whole space between the header and the results
+        // and centres itself in it, rather than sitting under the text at a
+        // fixed offset. It is the only control on the screen and the one thing
+        // the user came here to press, so it belongs in the middle of the
+        // space rather than at the top of it.
+        //
+        // weight(1f) is what makes it centre in whatever is left over, so the
+        // button stays put as results appear beneath it rather than being
+        // pushed around by them.
+        Box(
+            Modifier.fillMaxWidth().weight(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 Box(
                     Modifier
-                        .size(120.dp)
+                        .size(140.dp)
                         .clip(CircleShape)
                         .background(if (state.recording) Danger else Violet)
                         .flowClickable { if (state.recording) onStop() else onStart() },
@@ -222,24 +228,43 @@ fun VoiceScreen(
                         color = Color.White
                     )
                 }
+                Text(
+                    when {
+                        state.recording -> "Listening… tap to stop"
+                        state.thinking -> "Reading it back…"
+                        else -> state.note ?: "Tap to start"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (state.recording) Danger else InkFaint,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp)
+                )
             }
         }
 
-        item {
-            Text(
-                when {
-                    state.recording -> "Listening… tap to stop"
-                    state.thinking -> "Reading it back…"
-                    else -> state.note ?: "Tap to start"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (state.recording) Danger else InkFaint,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 18.dp)
-            )
-        }
+        VoiceResults(state, onSave, onStart)
+    }
+}
 
-        if (state.items.isNotEmpty()) {
+/**
+ * The items Gemma heard, below the button.
+ *
+ * Given its own height budget rather than sharing the button's, so a long list
+ * scrolls within itself instead of pushing the record button off the top of
+ * the screen — the button has to stay reachable to record again.
+ */
+@Composable
+private fun VoiceResults(
+    state: VoiceState,
+    onSave: () -> Unit,
+    onStart: () -> Unit
+) {
+    if (state.items.isEmpty()) return
+
+    LazyColumn(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+        contentPadding = PaddingValues(bottom = 30.dp)
+    ) {
             item {
                 SectionHeader(
                     "${state.items.size} action item${if (state.items.size == 1) "" else "s"}",
@@ -278,6 +303,5 @@ fun VoiceScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
                 )
             }
-        }
     }
 }
