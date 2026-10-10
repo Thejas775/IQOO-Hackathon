@@ -261,7 +261,8 @@ fun DailyFlowApp() {
             val memories by memVm.memories.collectAsState()
             MemoriesScreen(
                 memories = memories,
-                onBack = { showMemories = false }
+                onBack = { showMemories = false },
+                onDelete = memVm::delete
             )
         }
 

@@ -456,6 +456,11 @@ object MemoryRepository {
     suspend fun getPendingCloudSync() = dao.getPendingCloudSync()
     suspend fun markSyncedToCloud(id: Long) = dao.markSyncedToCloud(id)
 
+    /** Removes a single memory the user judged wrong or unwanted. Everything
+     *  derived from it — the timeline row, the commitment, the person's
+     *  counts — is observed off the same table, so they all follow. */
+    suspend fun delete(id: Long) = dao.deleteById(id)
+
     /** Wick calls this clearAll; DailyFlow already had eraseAll doing the
      *  same thing, so this is an alias rather than a second implementation. */
     suspend fun clearAll() = eraseAll()

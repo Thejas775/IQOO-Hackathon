@@ -17,6 +17,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,7 +41,9 @@ import com.knoxx.dailyflow.ui.theme.Ink
 import com.knoxx.dailyflow.ui.theme.InkFaint
 import com.knoxx.dailyflow.ui.theme.InkSecondary
 import com.knoxx.dailyflow.ui.theme.Paper
+import com.knoxx.dailyflow.ui.theme.Danger
 import com.knoxx.dailyflow.ui.theme.PaperSunken
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -48,6 +54,8 @@ class MemoriesViewModel(app: Application) : AndroidViewModel(app) {
         MemoryRepository.observeAllMemories()
             .map { it }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun delete(id: Long) = viewModelScope.launch { MemoryRepository.delete(id) }
 }
 
 /**
@@ -62,6 +70,7 @@ class MemoriesViewModel(app: Application) : AndroidViewModel(app) {
 fun MemoriesScreen(
     memories: List<MemoryEntity>,
     onBack: () -> Unit,
+    onDelete: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -103,13 +112,21 @@ fun MemoriesScreen(
                     Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)
                 )
             }
-            items(memories, key = { it.id }) { memory -> MemoryCard(memory) }
+            items(memories, key = { it.id }) { memory ->
+                MemoryCard(memory, onDelete = { onDelete(memory.id) })
+            }
         }
     }
 }
 
 @Composable
-private fun MemoryCard(memory: MemoryEntity) {
+private fun MemoryCard(memory: MemoryEntity, onDelete: () -> Unit) {
+    // Two taps, because this is the one irreversible action on the screen and
+    // the rows are dense enough to hit by accident while scrolling. Local to
+    // the card, so arming one row disarms nothing else and no state outlives
+    // the screen.
+    var confirming by remember { mutableStateOf(false) }
+
     FlowCard(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(
@@ -166,6 +183,18 @@ private fun MemoryCard(memory: MemoryEntity) {
                         color = InkFaint
                     )
                 }
+
+                Box(Modifier.weight(1f))
+
+                Text(
+                    if (confirming) "Remove?" else "Remove",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (confirming) Danger else InkFaint,
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .flowClickable { if (confirming) onDelete() else confirming = true }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
             }
         }
     }

@@ -344,6 +344,16 @@ interface MemoryDao {
 
     @Query("DELETE FROM memories")
     suspend fun clearAll()
+
+    /**
+     * One row, by id.
+     *
+     * "Erase all" was the only way out until now, which made a single wrong
+     * reading — a booking confirmation read as a commitment, a group chat read
+     * as a promise — cost the user their whole history to correct.
+     */
+    @Query("DELETE FROM memories WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }
 
 /** Projection for [MemoryDao.observePersonStats]. */
