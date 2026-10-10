@@ -1,0 +1,23 @@
+{
+  "apps": [
+    "WhatsApp.Root.exe"
+  ],
+  "sites": [
+    "app.slack.com",
+    "calendar.google.com",
+    "classroom.google.com",
+    "discord.com",
+    "mail.google.com",
+    "teams.microsoft.com",
+    "web.whatsapp.com"
+  ],
+  "site_options": [
+    "app.slack.com",
+    "calendar.google.com",
+    "classroom.google.com",
+    "discord.com",
+    "mail.google.com",
+    "teams.microsoft.com",
+    "web.whatsapp.com"
+  ]
+}

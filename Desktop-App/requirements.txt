@@ -1,0 +1,3 @@
+comtypes==1.4.17
+litert-lm-api==0.18.0
+winotify==1.1.0

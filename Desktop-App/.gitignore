@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+# Logs hold raw screen text and are written to %LOCALAPPDATA%\DailyFlow\logs,
+# never here. Ignored anyway in case --log-dir points into the project.
+logs/
+*.jsonl
