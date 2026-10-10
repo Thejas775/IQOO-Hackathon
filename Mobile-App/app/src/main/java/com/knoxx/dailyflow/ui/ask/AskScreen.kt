@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -44,6 +45,8 @@ import com.knoxx.dailyflow.llm.AskPrompt
 import com.knoxx.dailyflow.llm.GemmaEngine
 import com.knoxx.dailyflow.llm.MemorySearch
 import com.knoxx.dailyflow.ml.EmbeddingEngine
+import com.knoxx.dailyflow.ui.Qoo
+import com.knoxx.dailyflow.ui.QooTile
 import com.knoxx.dailyflow.ui.SecondaryChip
 import com.knoxx.dailyflow.ui.flowClickable
 import com.knoxx.dailyflow.ui.theme.BadgeLabel
@@ -212,13 +215,21 @@ private fun Header(state: AskState) {
 private fun Empty(modifier: Modifier, onAsk: (String) -> Unit) {
     Column(
         modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Resting rather than waving: this is the one screen where QOO is the
+        // thing being addressed, so he should look available rather than
+        // mid-greeting. He is also what the user is about to talk to, which
+        // makes an empty chat box read as a conversation not yet started
+        // rather than a form with nothing in it.
+        QooTile(Qoo.Resting, size = 104.dp, modifier = Modifier.padding(bottom = 18.dp))
         Text(
             "Everything you ask is answered here on the phone, from what DailyFlow has " +
                 "already understood.",
             style = MaterialTheme.typography.bodyMedium,
-            color = InkSecondary
+            color = InkSecondary,
+            textAlign = TextAlign.Center
         )
         Column(
             Modifier.padding(top = 16.dp),

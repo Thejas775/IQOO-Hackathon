@@ -33,6 +33,8 @@ import com.knoxx.dailyflow.llm.ModelLocator
 import com.knoxx.dailyflow.llm.ModelSpec
 import com.knoxx.dailyflow.ui.FlowCard
 import com.knoxx.dailyflow.ui.PrimaryChip
+import com.knoxx.dailyflow.ui.Qoo
+import com.knoxx.dailyflow.ui.QooTile
 import com.knoxx.dailyflow.ui.SecondaryChip
 import com.knoxx.dailyflow.ui.SunkenPanel
 import com.knoxx.dailyflow.ui.flowClickable
@@ -205,6 +207,13 @@ fun ModelSetupSheet(
 
             val progress = state.downloading
             if (progress != null) {
+                // The longest wait in the app — several gigabytes, and the
+                // first thing a new user meets. A bar alone makes that silence
+                // feel like nothing is happening; QOO running gives the wait a
+                // subject.
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    QooTile(Qoo.Running, size = 96.dp)
+                }
                 DownloadProgress(progress)
                 SecondaryChip("Cancel", onClick = onCancel, modifier = Modifier.fillMaxWidth())
                 Text(

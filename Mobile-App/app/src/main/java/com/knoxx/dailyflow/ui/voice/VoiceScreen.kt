@@ -36,6 +36,8 @@ import com.knoxx.dailyflow.llm.VoicePrompt
 import com.knoxx.dailyflow.ui.FlowCard
 import com.knoxx.dailyflow.ui.PrimaryChip
 import com.knoxx.dailyflow.ui.SecondaryChip
+import com.knoxx.dailyflow.ui.Qoo
+import com.knoxx.dailyflow.ui.QooTile
 import com.knoxx.dailyflow.ui.SectionHeader
 import com.knoxx.dailyflow.ui.flowClickable
 import com.knoxx.dailyflow.ui.theme.Danger
@@ -214,6 +216,19 @@ fun VoiceScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
+                // The pose is the recording state, so it is readable from
+                // across a room while the phone is on a desk taking a note —
+                // which is how this screen actually gets used. The small text
+                // under the button says the same thing, but only to someone
+                // already holding it.
+                QooTile(
+                    when {
+                        state.recording -> Qoo.Running
+                        state.thinking -> Qoo.Thinking
+                        else -> Qoo.Waving
+                    },
+                    size = 92.dp
+                )
                 Box(
                     Modifier
                         .size(140.dp)
