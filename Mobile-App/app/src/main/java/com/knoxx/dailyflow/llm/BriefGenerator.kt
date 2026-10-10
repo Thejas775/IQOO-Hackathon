@@ -1,6 +1,7 @@
 package com.knoxx.dailyflow.llm
 
 import android.content.Context
+import com.knoxx.dailyflow.data.Availability
 import com.knoxx.dailyflow.data.DeviceCalendar
 import com.knoxx.dailyflow.data.MemoryEntity
 import java.text.SimpleDateFormat
@@ -193,9 +194,167 @@ object BriefGenerator {
             ?.takeIf { it.isNotBlank() }
     }
 
+    /**
+     * Replies to whatever is on screen, for the floating bubble.
+     *
+     * Separate from [draftFollowUp] because it answers a different question.
+     * The first attempt routed this through the extraction prompt and then
+     * drafted from the memory that came back, which looked like good reuse and
+     * was wrong twice over on the first real test:
+     *
+     * - Extraction asks "is this worth REMEMBERING?" and will answer no to
+     *   plenty that is worth REPLYING to. An email the owner had sent to
+     *   themselves came back with nothing at all, because the prompt is told
+     *   the owner is not a correspondent — so the bubble had nothing to say
+     *   about a message filling the screen.
+     * - A screen holds several items and extraction returns a block per item.
+     *   Picking among them guessed wrong and answered a portfolio statement
+     *   sitting in the list behind an open meeting invitation.
+     *
+     * Someone who taps the bubble has already decided they want a reply, so
+     * the gate is removed and the model is asked the question that was
+     * actually meant: which message is the owner looking at, and what should
+     * they say back.
+     */
+    suspend fun draftReplyToScreen(
+        context: Context,
+        packageName: String,
+        screenText: String
+    ): String? {
+        if (screenText.isBlank()) return null
+
+        val read = GemmaEngine.complete(context, readPrompt(packageName, screenText))
+            ?: return null
+
+        val fields = read.lineSequence()
+            .mapNotNull { line ->
+                val at = line.indexOf(':')
+                if (at <= 0) null
+                else line.substring(0, at).trim().uppercase() to line.substring(at + 1).trim()
+            }
+            .toMap()
+
+        val message = fields["MESSAGE"]?.takeIf { it.isNotBlank() && !it.equals("none", true) }
+            ?: return null
+
+        val proposed = ExtractionPrompt.parseDue(fields["TIME"])
+        val availability = proposed?.let { DeviceCalendar.availabilityAt(context, it) }
+
+        return GemmaEngine.complete(
+            context,
+            replyPrompt(
+                message = message,
+                from = fields["FROM"]?.takeIf { it.isNotBlank() && !it.equals("none", true) },
+                proposed = proposed,
+                availability = availability
+            )
+        )?.trim()?.trim('"')?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Pass one: find the message, ignore the furniture.
+     *
+     * Told explicitly to ignore the app's own suggested replies. Gmail renders
+     * "Yes, I am available." as tappable chips right under the message, and
+     * they read to a model like someone's answer — it would otherwise reply to
+     * a button.
+     */
+    private fun readPrompt(packageName: String, screenText: String) = buildString {
+        appendLine(
+            "Below is the text visible on one screen of $packageName, flattened from the " +
+                "Android accessibility tree. The phone's owner is looking at it and wants to " +
+                "reply to it."
+        )
+        appendLine()
+        appendLine("Find the most recent message that is addressed to the owner.")
+        appendLine()
+        appendLine("Answer with EXACTLY these three lines and nothing else:")
+        appendLine("MESSAGE: what they said, in their own words, or none")
+        appendLine("FROM: who sent it, or none")
+        appendLine("TIME: yyyy-MM-ddTHH:mm:ss if the message proposes a specific time, or empty")
+        appendLine()
+        appendLine("Rules:")
+        appendLine(
+            "- Ignore buttons, menus, tabs and the app's own suggested replies. Phrases like " +
+                "\"Yes, I am available.\" offered as options are not messages."
+        )
+        appendLine(
+            "- MESSAGE is what was actually written. Do not summarise it away and do not " +
+                "invent anything that is not on the screen."
+        )
+        appendLine(
+            "- TIME: resolve \"tomorrow at 5pm\" or \"Friday 3\" against NOW below. Leave it " +
+                "empty unless a specific time is proposed."
+        )
+        appendLine()
+        appendLine("NOW: ${isoLocal.format(Date())}")
+        appendLine()
+        appendLine("SCREEN:")
+        appendLine(screenText.take(3000))
+        appendLine()
+        appendLine("The three lines:")
+    }
+
+    /** Pass two: say it. Same availability rules as [draftFollowUp]. */
+    private fun replyPrompt(
+        message: String,
+        from: String?,
+        proposed: Long?,
+        availability: Availability?
+    ) = buildString {
+        appendLine("Write the short reply the phone's owner can send to this message.")
+        appendLine()
+        appendLine("THEY SAID: \"$message\"")
+        from?.let { appendLine("FROM: $it") }
+        proposed?.let { appendLine("TIME BEING PROPOSED: ${readableTime.format(Date(it))}") }
+
+        if (availability != null && availability.known) {
+            appendLine()
+            if (availability.free) {
+                appendLine("YOUR CALENDAR: nothing else booked then. You are free.")
+            } else {
+                appendLine("YOUR CALENDAR: you are already busy then.")
+                if (availability.alternatives.isNotEmpty()) {
+                    appendLine(
+                        "YOU ARE FREE AT: " + availability.alternatives.joinToString(" or ") {
+                            readableTime.format(Date(it))
+                        }
+                    )
+                }
+            }
+        }
+
+        appendLine()
+        appendLine("Rules:")
+        appendLine("- Two sentences at most. Write it as the owner, ready to send.")
+        appendLine("- Answer what they actually asked. Warm and direct, no corporate phrasing.")
+        if (availability != null && availability.known) {
+            appendLine(
+                if (availability.free) {
+                    "- The time works. Say yes and confirm the time back to them."
+                } else {
+                    "- The time does not work. Say you are not free then and offer one of the " +
+                        "times under YOU ARE FREE AT. Offer no other time."
+                }
+            )
+            appendLine("- Never say what the other commitment is. \"I'm tied up then\" is enough.")
+        } else if (proposed != null) {
+            appendLine(
+                "- Do not say whether you are free or busy, and do not accept or decline the " +
+                    "time. Nothing above tells you which is true."
+            )
+        }
+        appendLine("- Output only the message itself, with no quotes or labels around it.")
+        appendLine()
+        appendLine("The reply:")
+    }
+
     /** "3:00 PM on Thu 16 Oct" — a time a person would say out loud. */
     private val readableTime =
         SimpleDateFormat("h:mm a 'on' EEE d MMM", Locale.getDefault())
+
+    /** The format the date parser expects back. */
+    private val isoLocal = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
 
     /**
      * Small models answer a request for one sentence with a paragraph often

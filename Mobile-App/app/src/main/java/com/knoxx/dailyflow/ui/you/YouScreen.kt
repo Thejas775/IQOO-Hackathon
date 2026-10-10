@@ -47,6 +47,7 @@ import com.knoxx.dailyflow.ui.QooTile
 import com.knoxx.dailyflow.ui.PrimaryChip
 import com.knoxx.dailyflow.ui.SecondaryChip
 import com.knoxx.dailyflow.ui.SunkenPanel
+import com.knoxx.dailyflow.overlay.BubblePreferences
 import com.knoxx.dailyflow.ui.flowClickable
 import com.knoxx.dailyflow.ui.theme.ThemePreference
 import com.knoxx.dailyflow.ui.theme.BorderStrong
@@ -241,6 +242,8 @@ fun YouScreen(
                 NavRow("Tuning", "Send test reminders, and run prompts against Gemma", null, onOpenDev)
             }
         }
+
+        item { BubbleCard(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) }
 
         item { ThemeCard(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) }
 
@@ -523,6 +526,52 @@ private fun NavRow(title: String, subtitle: String, trailing: String?, onClick: 
             }
             trailing?.let { Text(it, style = MonoFigure, color = InkSecondary) }
             Text("›", style = MaterialTheme.typography.titleMedium, color = InkSecondary)
+        }
+    }
+}
+
+/**
+ * QOO over other apps, as a switch.
+ *
+ * Opt-in, and the default is the point: a mascot that appears unasked on top
+ * of someone's inbox is the behaviour an app gets uninstalled for. It also
+ * states where it will appear, because "floats over your apps" with no list
+ * reads as "watches everything" — which is the fear this app spends the rest
+ * of its surface area disproving.
+ */
+@Composable
+private fun BubbleCard(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var on by remember { mutableStateOf(BubblePreferences.isEnabled(context)) }
+
+    FlowCard(modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            QooTile(if (on) Qoo.Waving else Qoo.Sleeping, size = 52.dp)
+            Column(Modifier.weight(1f)) {
+                Text("Reply bubble", style = MaterialTheme.typography.titleSmall, color = Ink)
+                Text(
+                    if (on) {
+                        "QOO waits in Gmail and your chat apps. Tap him and he reads the " +
+                            "thread, checks your calendar, and writes the reply into the box."
+                    } else {
+                        "Off — nothing is drawn over your other apps."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSecondary
+                )
+            }
+            Switch(
+                checked = on,
+                onCheckedChange = {
+                    on = it
+                    BubblePreferences.set(context, it)
+                },
+                colors = SwitchDefaults.colors(checkedTrackColor = Violet)
+            )
         }
     }
 }

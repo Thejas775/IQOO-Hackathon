@@ -8,6 +8,9 @@ import com.knoxx.dailyflow.data.CapturePreferences
 import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.debug.DebugLog
+import com.knoxx.dailyflow.overlay.BubblePreferences
+import com.knoxx.dailyflow.overlay.ReplyBubble
+import com.knoxx.dailyflow.overlay.RepliableApps
 
 /**
  * Watches on-screen text across other apps and hands each screen to
@@ -34,15 +37,29 @@ class CaptureService : AccessibilityService() {
 
     private val keyguard by lazy { getSystemService(KeyguardManager::class.java) }
 
+    /**
+     * QOO over the top of other apps.
+     *
+     * Lives here rather than in a service of its own because an accessibility
+     * service may add a TYPE_ACCESSIBILITY_OVERLAY window with no further
+     * permission — no "display over other apps" prompt — and because this
+     * class already has the screen text the bubble needs. Created lazily so a
+     * user who never turns the bubble on never builds one.
+     */
+    private var bubble: ReplyBubble? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         MemoryRepository.init(applicationContext)
         CapturePreferences.init(applicationContext)
+        BubblePreferences.init(applicationContext)
         CaptureStats.init(applicationContext)
         CaptureStats.markCaptureStarted()
     }
 
     override fun onDestroy() {
+        bubble?.destroy()
+        bubble = null
         CaptureStats.flush()
         CaptureStats.markCaptureStopped()
         super.onDestroy()
@@ -90,6 +107,8 @@ class CaptureService : AccessibilityService() {
             return
         }
 
+        updateBubble(packageName)
+
         CaptureStats.recordEvent()
         MemoryRepository.enqueue(
             Capture(
@@ -99,6 +118,33 @@ class CaptureService : AccessibilityService() {
                 text = extracted.text
             )
         )
+    }
+
+    /**
+     * Shows or hides QOO for the app that is in front.
+     *
+     * Only the package is passed. The bubble used to be handed this pass's
+     * extracted text as well, which made the draft answer whichever screen
+     * last fired an event rather than the one under the user's thumb — it
+     * replied to an inbox list while an invitation was open. It now reads the
+     * window itself when tapped.
+     *
+     * Hidden rather than left in place on a non-repliable screen, because a
+     * bubble that lingers over a banking app is exactly the thing the
+     * allow-list exists to prevent.
+     */
+    private fun updateBubble(packageName: String) {
+        if (!BubblePreferences.enabled.value) {
+            bubble?.hide()
+            return
+        }
+
+        if (RepliableApps.includes(packageName)) {
+            val current = bubble ?: ReplyBubble(this).also { bubble = it }
+            current.onScreen(packageName)
+        } else {
+            bubble?.hide()
+        }
     }
 
     override fun onInterrupt() {
