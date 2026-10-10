@@ -40,6 +40,8 @@ import com.knoxx.dailyflow.capture.NotificationPermission
 import com.knoxx.dailyflow.cloud.AuthRepository
 import com.knoxx.dailyflow.cloud.ConnectAssistantScreen
 import com.knoxx.dailyflow.cloud.SignInScreen
+import com.knoxx.dailyflow.data.DeviceCalendar
+import com.knoxx.dailyflow.data.MemoryEntity
 import com.knoxx.dailyflow.debug.DebugLog
 import com.knoxx.dailyflow.ui.apps.AllowListScreen
 import com.knoxx.dailyflow.ui.apps.AllowListViewModel
@@ -136,6 +138,28 @@ fun DailyFlowApp() {
                     val brief by vm.brief.collectAsState()
                     val draft by vm.draft.collectAsState()
                     val speaker = rememberSpeaker()
+                    val todayCtx = LocalContext.current
+
+                    // READ_CALENDAR is declared in the manifest and was never
+                    // once requested, so DeviceCalendar.hasPermission had been
+                    // false on every device since the calendar was added.
+                    //
+                    // Asked here, on the tap, rather than at launch: this is
+                    // the only place the answer changes what the app does, and
+                    // a calendar prompt on first open — before the user has
+                    // seen a single memory — is the kind of thing that gets an
+                    // app denied out of reflex.
+                    var pendingDraft by remember { mutableStateOf<MemoryEntity?>(null) }
+                    val askCalendar = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { granted ->
+                        DebugLog.log("draft", "READ_CALENDAR granted=$granted")
+                        // Drafted either way. Denied simply means the draft
+                        // says nothing about availability, which is the same
+                        // behaviour as before this existed.
+                        pendingDraft?.let(vm::draftFollowUp)
+                        pendingDraft = null
+                    }
 
                     // Keyed on the timeline so the brief is generated once the
                     // day's data has actually arrived, and regenerated if it
@@ -156,7 +180,21 @@ fun DailyFlowApp() {
                         // Speaks whatever the card is showing, generated or
                         // fallback, so the button is never a dead control.
                         onPlayBrief = { speaker.speak(brief ?: state.spokenFallback()) },
-                        onDraftFollowUp = vm::draftFollowUp,
+                        onDraftFollowUp = { memory ->
+                            // Only worth asking when the reply actually turns
+                            // on a time. A commitment with no stated hour
+                            // gains nothing from the calendar, so it drafts
+                            // immediately rather than interrupting.
+                            val needsCalendar = memory.dueAt != null &&
+                                memory.dueAtExplicit &&
+                                !DeviceCalendar.hasPermission(todayCtx)
+                            if (needsCalendar) {
+                                pendingDraft = memory
+                                askCalendar.launch(android.Manifest.permission.READ_CALENDAR)
+                            } else {
+                                vm.draftFollowUp(memory)
+                            }
+                        },
                         onSpeak = { showVoice = true }
                     )
 
@@ -277,6 +315,7 @@ fun DailyFlowApp() {
                 onRun = devVm::run,
                 onLoadReal = devVm::loadRealPrompt,
                 onTestReminders = devVm::sendTestReminders,
+                onTestCalendarReply = devVm::testCalendarReply,
                 onBenchmark = devVm::runFormatBenchmark
             )
         }

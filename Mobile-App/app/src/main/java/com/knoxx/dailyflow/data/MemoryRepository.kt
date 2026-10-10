@@ -285,7 +285,17 @@ object MemoryRepository {
         title: String,
         dueAt: Long?,
         category: String?,
-        personName: String?
+        personName: String?,
+        /**
+         * Whether an hour was actually chosen, as opposed to the 9 AM anchor
+         * the app applies to a date-only task.
+         *
+         * Defaults to false because the Add sheet only offers Today /
+         * Tomorrow / Next week — all of them 9 AM by convention, none of them
+         * a time the user picked. Treating those as stated made the
+         * calendar-aware draft check availability at an hour nobody proposed.
+         */
+        dueAtExplicit: Boolean = false
     ): Long = dao.insert(
         MemoryEntity(
             timestamp = System.currentTimeMillis(),
@@ -297,7 +307,7 @@ object MemoryRepository {
             summary = title,
             direction = Direction.MANUAL.name,
             dueAt = dueAt,
-            dueAtExplicit = dueAt != null,
+            dueAtExplicit = dueAt != null && dueAtExplicit,
             category = category,
             personName = personName
         )

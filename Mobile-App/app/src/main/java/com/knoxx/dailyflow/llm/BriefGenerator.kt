@@ -1,7 +1,11 @@
 package com.knoxx.dailyflow.llm
 
 import android.content.Context
+import com.knoxx.dailyflow.data.DeviceCalendar
 import com.knoxx.dailyflow.data.MemoryEntity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * The one-line morning brief, and the draft follow-up.
@@ -108,20 +112,76 @@ object BriefGenerator {
     suspend fun draftFollowUp(context: Context, memory: MemoryEntity): String? {
         val summary = memory.summary ?: return null
 
+        // The calendar is only consulted when a specific time was actually
+        // stated. dueAtExplicit is the difference between "3pm Thursday" and
+        // a date-only deadline the app anchored to 9 AM itself — checking
+        // availability against an hour nobody proposed would invent a clash.
+        val proposed = memory.dueAt?.takeIf { memory.dueAtExplicit }
+        val availability = proposed?.let { DeviceCalendar.availabilityAt(context, it) }
+
         val prompt = buildString {
             appendLine(
-                "Write a short, friendly message the phone's owner can send about this " +
-                    "outstanding commitment."
+                "Write a short, friendly message the phone's owner can send in reply to this."
             )
             appendLine()
-            appendLine("COMMITMENT: $summary")
+            appendLine("ABOUT: $summary")
             memory.personName?.let { appendLine("TO: $it") }
-            memory.sourceQuote?.let { appendLine("ORIGINALLY SAID: \"$it\"") }
+            memory.sourceQuote?.let { appendLine("THEY SAID: \"$it\"") }
+            proposed?.let { appendLine("TIME BEING PROPOSED: ${readableTime.format(Date(it))}") }
+
+            // The whole point of the feature: a reply to "can you make 3?"
+            // that does not know whether 3 is free is just a politely worded
+            // guess, and the owner has to go and check the calendar anyway —
+            // which is the work the draft was supposed to save.
+            if (availability != null && availability.known) {
+                appendLine()
+                if (availability.free) {
+                    appendLine("YOUR CALENDAR: nothing else booked at that time. You are free.")
+                } else {
+                    appendLine(
+                        "YOUR CALENDAR: you are already busy then — " +
+                            availability.conflicts.size.let { n ->
+                                if (n == 1) "one thing is booked" else "$n things are booked"
+                            } + " over that time."
+                    )
+                    if (availability.alternatives.isNotEmpty()) {
+                        appendLine(
+                            "YOU ARE FREE AT: " + availability.alternatives.joinToString(" or ") {
+                                readableTime.format(Date(it))
+                            }
+                        )
+                    }
+                }
+            }
+
             appendLine()
             appendLine("Rules:")
             appendLine("- Two sentences at most. Write it as the owner, ready to send.")
             appendLine("- Warm and direct. No apologising at length, no corporate phrasing.")
-            appendLine("- Do not invent a new date or promise anything that isn't above.")
+            if (availability != null && availability.known) {
+                appendLine(
+                    if (availability.free) {
+                        "- The time works. Accept it plainly and confirm the time back to them."
+                    } else {
+                        "- The time does not work. Say you are not free then, and offer one of " +
+                            "the times under YOU ARE FREE AT. Offer no other time."
+                    }
+                )
+                appendLine(
+                    // The draft is going to another person. What else is on
+                    // the owner's calendar is nobody's business, and a model
+                    // handed titles will helpfully paste one in.
+                    "- Never say what the other commitment is. \"I'm tied up then\" is enough."
+                )
+            } else {
+                appendLine(
+                    // Silence beats a guess: an unreadable calendar and an
+                    // empty one look identical from here.
+                    "- Do not say whether you are free or busy, and do not accept or decline a " +
+                        "time. Nothing above tells you which is true."
+                )
+            }
+            appendLine("- Do not invent a date or promise anything that isn't above.")
             appendLine("- Output only the message itself, with no quotes or labels around it.")
             appendLine()
             appendLine("The message:")
@@ -132,6 +192,10 @@ object BriefGenerator {
             ?.trim('"')
             ?.takeIf { it.isNotBlank() }
     }
+
+    /** "3:00 PM on Thu 16 Oct" — a time a person would say out loud. */
+    private val readableTime =
+        SimpleDateFormat("h:mm a 'on' EEE d MMM", Locale.getDefault())
 
     /**
      * Small models answer a request for one sentence with a paragraph often

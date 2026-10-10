@@ -29,8 +29,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.knoxx.dailyflow.data.DeviceCalendar
+import com.knoxx.dailyflow.data.Direction
+import com.knoxx.dailyflow.data.MemoryEntity
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.debug.DebugLog
+import com.knoxx.dailyflow.llm.BriefGenerator
 import com.knoxx.dailyflow.llm.ExtractionPrompt
 import com.knoxx.dailyflow.llm.GemmaEngine
 import com.knoxx.dailyflow.ui.FlowCard
@@ -45,6 +49,9 @@ import com.knoxx.dailyflow.ui.theme.InkSecondary
 import com.knoxx.dailyflow.ui.theme.Paper
 import com.knoxx.dailyflow.ui.theme.PaperSunken
 import com.knoxx.dailyflow.work.ReminderTester
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import org.json.JSONException
 import org.json.JSONObject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -220,6 +227,71 @@ class DevViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Drafts a reply to an invitation at the next whole hour.
+     *
+     * Exists because the calendar-aware draft is otherwise almost impossible
+     * to exercise: it needs a captured memory that states a real time, which
+     * means waiting for someone to actually send one. The memory built here is
+     * never stored — it goes straight to the drafter and is discarded.
+     *
+     * The availability line is printed above the draft deliberately. When the
+     * reply reads wrong, the first question is always whether the calendar was
+     * read correctly or the model ignored what it was told, and those are
+     * different bugs with different fixes.
+     */
+    fun testCalendarReply() {
+        if (_state.value.running) return
+        _state.value = DevState(running = true, note = "Checking your calendar…")
+
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+            val at = java.util.Calendar.getInstance().apply {
+                add(java.util.Calendar.HOUR_OF_DAY, 1)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+            val availability = DeviceCalendar.availabilityAt(context, at)
+            val whenLabel = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(at))
+
+            val facts = when {
+                !availability.known ->
+                    "Calendar: NOT READABLE (permission never granted) — the draft must " +
+                        "say nothing about being free."
+                availability.free -> "Calendar: FREE at $whenLabel."
+                else -> "Calendar: BUSY at $whenLabel (${availability.conflicts.size} clash). " +
+                    "Free at " + availability.alternatives.joinToString(" or ") {
+                        SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(it))
+                    }.ifEmpty { "nothing else today" } + "."
+            }
+
+            val invitation = MemoryEntity(
+                timestamp = System.currentTimeMillis(),
+                packageName = "com.whatsapp",
+                rawText = "",
+                summary = "Ravi asked whether you can join a call at $whenLabel today.",
+                sourceQuote = "Can you make a call at $whenLabel today?",
+                personName = "Ravi",
+                direction = Direction.THEY_ASKED.name,
+                dueAt = at,
+                dueAtExplicit = true,
+                extracted = true,
+                isLoop = true
+            )
+
+            val draft = BriefGenerator.draftFollowUp(context, invitation)
+            _state.value = DevState(
+                running = false,
+                reply = facts + "\n\n" + (draft ?: "(model unavailable)"),
+                note = null
+            )
+            DebugLog.log("dev", "calendar reply test: known=${availability.known} " +
+                "free=${availability.free} clashes=${availability.conflicts.size}")
+        }
+    }
+
     fun sendTestReminders() {
         viewModelScope.launch {
             val count = ReminderTester.fireAll(getApplication())
@@ -239,6 +311,7 @@ fun DevScreen(
     onRun: (String) -> Unit,
     onLoadReal: ((String) -> Unit) -> Unit,
     onTestReminders: () -> Unit,
+    onTestCalendarReply: () -> Unit,
     onBenchmark: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -281,6 +354,30 @@ fun DevScreen(
                 "Fires every scheduled reminder immediately, each showing its real " +
                     "deadline. A preview, not a substitute: they are not consumed, so " +
                     "the genuine nudge still arrives on time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = InkSecondary,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp)
+            )
+        }
+
+        item {
+            SectionHeader(
+                "Calendar reply",
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp)
+            )
+        }
+        item {
+            SecondaryChip(
+                if (state.running) "Running..." else "Draft a reply to a call at the next hour",
+                onClick = onTestCalendarReply,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+            )
+        }
+        item {
+            Text(
+                "Invents an invitation for the next whole hour, reads your real calendar, " +
+                    "and drafts the reply. Prints what the calendar said above the draft, so " +
+                    "a bad reply can be blamed on the right half.",
                 style = MaterialTheme.typography.bodySmall,
                 color = InkSecondary,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp)

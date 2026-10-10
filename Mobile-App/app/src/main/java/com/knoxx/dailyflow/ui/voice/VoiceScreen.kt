@@ -58,6 +58,10 @@ data class VoiceItem(
     val summary: String,
     val person: String?,
     val dueAt: Long?,
+    /** True when the note actually said an hour, false when the parser
+     *  anchored a bare date to 9 AM. Carried through to the memory so a
+     *  calendar-aware reply only checks times someone really proposed. */
+    val dueAtExplicit: Boolean,
     val direction: Direction
 )
 
@@ -128,6 +132,7 @@ class VoiceViewModel(app: Application) : AndroidViewModel(app) {
                         summary = it.summary.orEmpty(),
                         person = it.person,
                         dueAt = it.dueAt,
+                        dueAtExplicit = it.dueAtExplicit,
                         direction = it.direction
                     )
                 }
@@ -156,7 +161,11 @@ class VoiceViewModel(app: Application) : AndroidViewModel(app) {
                     title = item.summary,
                     dueAt = item.dueAt,
                     category = null,
-                    personName = item.person
+                    personName = item.person,
+                    // Spoken notes do carry real times — "call the plumber at
+                    // four" — so a due time parsed from speech is a stated
+                    // one, unlike the Add sheet's day chips.
+                    dueAtExplicit = item.dueAtExplicit
                 )
             }
             DebugLog.log("voice", "saved ${items.size} items")
