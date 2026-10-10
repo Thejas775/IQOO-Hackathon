@@ -88,7 +88,9 @@ data class YouState(
     val allowedAppCount: Int = 0,
     val pendingCount: Int = 0,
     val sync: ExtractionRunner.Progress = ExtractionRunner.Progress(),
-    val notificationAccess: Boolean = false
+    val notificationAccess: Boolean = false,
+    /** Paired computers, for the Add computer row. */
+    val computers: Int = 0
 )
 
 class YouViewModel(app: Application) : AndroidViewModel(app) {
@@ -156,7 +158,10 @@ class YouViewModel(app: Application) : AndroidViewModel(app) {
             approximateBytes = 0L,
             allowedAppCount = 0,
             pendingCount = w.first,
-            sync = w.second
+            sync = w.second,
+            // Read with the rest on every emission (and on resume, via
+            // refreshPermissions), so returning from pairing updates the row.
+            computers = com.knoxx.dailyflow.sync.PairedComputers.all(getApplication()).size
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), YouState())
 
@@ -201,6 +206,7 @@ fun YouScreen(
     onSync: () -> Unit,
     onStopSync: () -> Unit,
     onNotificationAccess: () -> Unit,
+    onComputers: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -238,6 +244,15 @@ fun YouScreen(
                     onNotificationAccess
                 )
                 NavRow("Manage app access", "Choose which apps DailyFlow may read", null, onManageApps)
+                // Pairing with DailyFlow on a computer: both keep the same
+                // memories, over the local Wi-Fi, with nothing in between.
+                NavRow(
+                    "Add computer",
+                    if (state.computers == 0) "Sync your memories with DailyFlow on a PC"
+                    else "Paired with ${state.computers} — tap to sync or add another",
+                    if (state.computers > 0) "${state.computers}" else null,
+                    onComputers
+                )
                 NavRow("Connect an assistant", "Give Claude the address and password for your memory", null, onConnectAssistant)
                 NavRow("Tuning", "Send test reminders, and run prompts against Gemma", null, onOpenDev)
             }

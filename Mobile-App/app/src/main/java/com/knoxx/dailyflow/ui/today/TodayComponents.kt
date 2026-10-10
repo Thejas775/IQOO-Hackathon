@@ -1,5 +1,6 @@
 package com.knoxx.dailyflow.ui.today
 
+import com.knoxx.dailyflow.ui.computerName
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -378,6 +379,6 @@ private fun Attribution(memory: MemoryEntity, modifier: Modifier = Modifier) {
             fontWeight = FontWeight(600)
         )
         Box(Modifier.size(3.dp).clip(CircleShape).background(InkDisabled))
-        SourceBadge(memory.packageName.ifBlank { null })
+        SourceBadge(memory.packageName.ifBlank { null }, computer = memory.computerName)
     }
 }

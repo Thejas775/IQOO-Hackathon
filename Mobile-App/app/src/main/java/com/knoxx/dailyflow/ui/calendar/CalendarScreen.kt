@@ -1,5 +1,6 @@
 package com.knoxx.dailyflow.ui.calendar
 
+import com.knoxx.dailyflow.ui.computerName
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -336,7 +337,10 @@ private fun DayItemRow(item: DayItem) {
                                     fontWeight = FontWeight(600)
                                 )
                             }
-                            SourceBadge(item.entity.packageName.ifBlank { null })
+                            SourceBadge(
+                                item.entity.packageName.ifBlank { null },
+                                computer = item.entity.computerName
+                            )
                         }
                         // Device events are labelled as such so it is always
                         // clear which rows DailyFlow understood and which it

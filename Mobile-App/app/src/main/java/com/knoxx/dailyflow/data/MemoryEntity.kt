@@ -1,5 +1,6 @@
 package com.knoxx.dailyflow.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -26,7 +27,9 @@ import androidx.room.PrimaryKey
         Index(value = ["packageName", "timestamp"]),
         Index(value = ["dueAt"]),
         Index(value = ["personName"]),
-        Index(value = ["extracted"])
+        Index(value = ["extracted"]),
+        // Every synced row is looked up by its cross-device id on each sync.
+        Index(value = ["syncId"], unique = true)
     ]
 )
 data class MemoryEntity(
@@ -111,8 +114,37 @@ data class MemoryEntity(
      * column later means a migration, and this one is a single unused byte
      * until that feature lands.
      */
-    val syncedToCloud: Boolean = false
+    val syncedToCloud: Boolean = false,
+
+    // ── PC sync (sync/PcSync.kt) ─────────────────────────────────────────
+
+    /**
+     * The row's id on every device. Local ids are autoincrement and collide
+     * across a phone and a PC, so a memory needs one that both agree on.
+     * Assigned when the row first becomes a memory; null for captures that
+     * never did, which therefore never leave this phone.
+     */
+    val syncId: String? = null,
+
+    /** Where it was made. Null means this phone; otherwise the paired PC's
+     *  id, name and kind ("pc"), so a card can say which device saw it. */
+    val originDevice: String? = null,
+    val originName: String? = null,
+    val originKind: String? = null,
+
+    /** When it last changed on any device. The newer change wins a conflict. */
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0,
+
+    /** This phone's change counter: a sync sends rows changed since the last
+     *  number the PC acknowledged, rather than everything every time. */
+    @ColumnInfo(defaultValue = "0") val changeSeq: Long = 0,
+
+    /** The PC a change came from, so it is not sent straight back to it. */
+    val lastChangedBy: String? = null
 ) {
+    /** True when this memory was made on a paired computer and synced here. */
+    val fromComputer: Boolean get() = originKind == "pc"
+
     /** Typed accessor for the string column. */
     val directionOrNull: Direction?
         get() = direction?.let { runCatching { Direction.valueOf(it) }.getOrNull() }

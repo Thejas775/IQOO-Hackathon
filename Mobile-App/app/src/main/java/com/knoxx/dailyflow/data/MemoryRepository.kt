@@ -127,9 +127,29 @@ object MemoryRepository {
     /** Candidate pool handed to Ask before similarity ranking. */
     private const val RETRIEVAL_POOL = 500
 
+    private lateinit var syncDao: SyncDao
+
+    /** Fired after a memory changes on this phone, so a paired PC hears about
+     *  it soon rather than at the next periodic sync. Set by the Application,
+     *  for the same reason as [onCaptureStored]. */
+    private var onLocalChange: (() -> Unit)? = null
+
     fun init(context: Context) {
         if (::dao.isInitialized) return
-        dao = DailyFlowDatabase.getInstance(context).memoryDao()
+        val db = DailyFlowDatabase.getInstance(context)
+        dao = db.memoryDao()
+        syncDao = db.syncDao()
+    }
+
+    fun setOnLocalChange(listener: () -> Unit) {
+        onLocalChange = listener
+    }
+
+    /** Marks a memory changed here so the next PC sync sends it. Every write
+     *  that changes what a memory says, or whether it is done, ends here. */
+    private suspend fun touch(id: Long) {
+        syncDao.touch(id, System.currentTimeMillis())
+        onLocalChange?.invoke()
     }
 
     /** Wired up once the on-device embedder is loaded. Until then dedup runs
@@ -296,22 +316,26 @@ object MemoryRepository {
          * calendar-aware draft check availability at an hour nobody proposed.
          */
         dueAtExplicit: Boolean = false
-    ): Long = dao.insert(
-        MemoryEntity(
-            timestamp = System.currentTimeMillis(),
-            packageName = "",
-            rawText = title,
-            eventType = "MANUAL",
-            extracted = true,
-            isLoop = true,
-            summary = title,
-            direction = Direction.MANUAL.name,
-            dueAt = dueAt,
-            dueAtExplicit = dueAt != null && dueAtExplicit,
-            category = category,
-            personName = personName
+    ): Long {
+        val id = dao.insert(
+            MemoryEntity(
+                timestamp = System.currentTimeMillis(),
+                packageName = "",
+                rawText = title,
+                eventType = "MANUAL",
+                extracted = true,
+                isLoop = true,
+                summary = title,
+                direction = Direction.MANUAL.name,
+                dueAt = dueAt,
+                dueAtExplicit = dueAt != null && dueAtExplicit,
+                category = category,
+                personName = personName
+            )
         )
-    )
+        touch(id)
+        return id
+    }
 
     /**
      * A second, third or fourth memory found on one captured screen.
@@ -337,24 +361,28 @@ object MemoryRepository {
         personName: String?,
         category: String?,
         projectName: String?
-    ): Long = dao.insert(
-        MemoryEntity(
-            timestamp = parent.timestamp,
-            packageName = parent.packageName,
-            rawText = parent.rawText,
-            eventType = parent.eventType,
-            extracted = true,
-            isLoop = true,
-            summary = summary,
-            sourceQuote = sourceQuote,
-            direction = direction,
-            dueAt = dueAt,
-            dueAtExplicit = dueAtExplicit,
-            personName = personName,
-            category = category,
-            projectName = projectName
+    ): Long {
+        val id = dao.insert(
+            MemoryEntity(
+                timestamp = parent.timestamp,
+                packageName = parent.packageName,
+                rawText = parent.rawText,
+                eventType = parent.eventType,
+                extracted = true,
+                isLoop = true,
+                summary = summary,
+                sourceQuote = sourceQuote,
+                direction = direction,
+                dueAt = dueAt,
+                dueAtExplicit = dueAtExplicit,
+                personName = personName,
+                category = category,
+                projectName = projectName
+            )
         )
-    )
+        touch(id)
+        return id
+    }
 
     // ── pipeline ─────────────────────────────────────────────────────────
 
@@ -424,6 +452,7 @@ object MemoryRepository {
             category = category,
             projectName = projectName
         )
+        touch(id)
     }
 
     suspend fun markNotAMemory(id: Long) = dao.markNotAMemory(id)
@@ -458,7 +487,10 @@ object MemoryRepository {
     fun observeTimestampsSince(since: Long) = dao.observeTimestampsSince(since)
     fun observeApproximateBytes() = dao.observeApproximateBytes()
 
-    suspend fun setDone(id: Long, done: Boolean) = dao.setCommitmentDone(id, done)
+    suspend fun setDone(id: Long, done: Boolean) {
+        dao.setCommitmentDone(id, done)
+        touch(id)
+    }
     suspend fun openCommitments(limit: Int = OPEN_COMMITMENT_PROMPT_LIMIT) = dao.getOpenCommitments(limit)
     suspend fun pendingReminders() = dao.getPendingReminders()
     suspend fun markReminderSent(id: Long) = dao.markReminderSent(id)
@@ -469,14 +501,22 @@ object MemoryRepository {
     /** Removes a single memory the user judged wrong or unwanted. Everything
      *  derived from it — the timeline row, the commitment, the person's
      *  counts — is observed off the same table, so they all follow. */
-    suspend fun delete(id: Long) = dao.deleteById(id)
+    suspend fun delete(id: Long) {
+        // A synced memory leaves a tombstone, or the PC — which still has it —
+        // would send it straight back on the next sync.
+        syncDao.syncIdOf(id)?.let { syncDao.addTombstone(it, System.currentTimeMillis(), null) }
+        dao.deleteById(id)
+        onLocalChange?.invoke()
+    }
 
     /** Wick calls this clearAll; DailyFlow already had eraseAll doing the
      *  same thing, so this is an alias rather than a second implementation. */
     suspend fun clearAll() = eraseAll()
 
     /** "Erase all". Also clears the debounce map, so a capture already in
-     *  flight cannot land a row immediately after the user wiped everything. */
+     *  flight cannot land a row immediately after the user wiped everything.
+     *  This device only: it leaves no tombstones, so a paired PC keeps its
+     *  copy — "STORAGE · THIS DEVICE" is what the card promises. */
     suspend fun eraseAll() {
         pendingByPackage.values.forEach { it.cancel() }
         pendingByPackage.clear()

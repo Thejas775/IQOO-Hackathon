@@ -351,3 +351,63 @@ When we get here: **verify the current custom-connector auth spec before designi
 - **Don't start building features until asked.** He directs the sequence.
 - **One feature per commit**, with a message that explains *why*, not just what.
 - **Carry the comment style forward from Wick** — when a non-obvious choice is made, record the evidence that forced it. Those comments were the single most valuable thing in the old codebase.
+
+## 11. Phone ↔ PC sync (built 2026-10-10)
+
+Asked for: memories, tasks and the calendar in step between the phone and DailyFlow on a PC; every
+memory still says which device it came from; pairing from the phone's profile ("Add computer") with a
+code. Owner's decisions: **same Wi-Fi only** (no server — keeps "nothing leaves your devices") and
+**memories only** (raw screen text never syncs; "What was on screen" works only where it was captured).
+
+**Shape.** The PC listens (TCP 47811, discovery UDP 47812); the phone starts every exchange, because it
+knows when it is on Wi-Fi and a phone cannot be reached reliably. Protocol, byte for byte:
+`Desktop-App/dailyflow/sync_protocol.py` ↔ `Mobile-App/.../sync/SyncProtocol.kt` + `PcPairing.kt`.
+
+**Pairing.** PC: Model & settings → Phones → *Pair a phone* shows a 6-digit code (5 min, 5 tries) and
+its address. Phone: You → *Add computer* → finds PCs on the Wi-Fi by broadcast (or type the address,
+for networks that isolate clients) → type the code. SPAKE2 over the RFC 3526 2048-bit group: the code
+never crosses the network, a listener learns nothing brute-forceable, and an active attacker gets one
+guess per try. (Rejected: sending the code — sniffable; HMAC of the code under DH — a man in the middle
+brute-forces 10^6 codes offline in milliseconds.) Result: a 32-byte key per phone↔PC pair; every sync
+message is AES-256-GCM with the phone id as AAD.
+
+**Data.** Both databases gained `syncId` (cross-device id; local ids collide), `originDevice/Name/Kind`
+(NULL = this device), `updatedAt`, `changeSeq`, `lastChangedBy`, and a `sync_tombstones` table.
+Android: Room v2 → v3 migration (`MIGRATION_2_3`; existing memories get ids and are sent on first sync).
+Every write that changes a memory goes through one `touch` (Android `MemoryRepository`, PC `Store`):
+new memory, extraction saved, derived row, done/undone, manual task; delete writes a tombstone.
+Only understood memories travel (isLoop with a summary). "Erase everything" is this device only.
+
+**Sync.** Phone sends its changes since the PC's last ack (`pushedSeq`) plus its cursor of the PC's
+changes (`pcCursor`); the PC applies, answers with its changes after that cursor, in batches of 200
+until neither side has more. A change never echoes back to the device it came from (`lastChangedBy`).
+Conflicts: newer `updatedAt` wins; a deletion beats edits made before it. When: phone app start, a few
+seconds after any change on the phone (WorkManager, KEEP so an in-flight sync is never cancelled),
+every 15 min on unmetered network, *Sync now*. PC changes reach the phone at the phone's next sync.
+
+**Reminders.** A synced memory already due is marked reminded on arrival (the other device nudged;
+no burst of stale reminders on first sync); future ones are scheduled; ticked done elsewhere cancels.
+
+**Showing origin.** Phone: a violet "FROM <PC NAME>" chip beside the app badge on Today, Calendar,
+Person, and "· from <PC>" on Memories; PC app names/sites are labelled (whatsapp.root.exe → WhatsApp,
+mail.google.com → Gmail). PC: "📱 FROM <PHONE>" chip on every card; Android packages labelled.
+PC rows are kept out of the phone's "Manage app access" list.
+
+**Verified.** PC side end to end with a phone simulator (discovery; refused when not pairing; wrong
+code caught on the phone; right code pairs; code single-use; both directions; done both ways; stale
+edit ignored; deletions both ways; unpaired device and wrong key rejected). MODP prime checked
+(2048-bit safe prime). Android SQL (migration + every SyncDao query) run against SQLite.
+**Not verified: the Kotlin has not been compiled** (no Gradle by rule, no JDK on the machine) — see
+risks below.
+
+**Compile/run risks to check in Android Studio**
+- Room schema check on open: MIGRATION_2_3 must match the entity exactly (defaults `0` on the two
+  counters, `index_memories_syncId` unique). A mismatch throws "Migration didn't properly handle".
+- `"$NEXT_SEQ"` string templates inside `@Query` (const val, so constant — should compile).
+- Windows Firewall must allow python/pythonw on Private networks for TCP 47811 and UDP 47812, and the
+  Wi-Fi profile must be Private; a Public profile blocks inbound connections.
+
+**Known limits.** The same message read on both devices before either syncs becomes two memories
+(summary dedup only sees what is already local). Clock skew between devices beyond seconds can
+make an older edit win. Replay of an old captured sync message is accepted but harmless (LWW).
+

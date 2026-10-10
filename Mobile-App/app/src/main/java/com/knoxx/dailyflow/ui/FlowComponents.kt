@@ -166,22 +166,49 @@ fun CategoryTag(category: String?, modifier: Modifier = Modifier) {
     )
 }
 
-/** The uppercase app badge on a timeline row: a colour swatch plus the name. */
+/**
+ * The uppercase app badge on a timeline row: a colour swatch plus the name.
+ *
+ * [computer] is the paired PC's name when the memory was made there and
+ * synced to this phone; it adds a second chip, so every card says which
+ * device actually saw the thing rather than implying the phone did.
+ */
 @Composable
-fun SourceBadge(packageName: String?, modifier: Modifier = Modifier) {
+fun SourceBadge(packageName: String?, modifier: Modifier = Modifier, computer: String? = null) {
     val app = sourceAppFor(packageName)
     Row(
-        modifier = modifier
-            .clip(MaterialTheme.shapes.extraSmall)
-            .background(app.tint)
-            .padding(start = 5.dp, end = 7.dp, top = 2.dp, bottom = 2.dp),
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        Box(Modifier.size(11.dp).clip(RoundedCornerShape(3.dp)).background(app.ink))
-        Text(app.label.uppercase(), style = BadgeLabel, color = app.ink)
+        Row(
+            modifier = Modifier
+                .clip(MaterialTheme.shapes.extraSmall)
+                .background(app.tint)
+                .padding(start = 5.dp, end = 7.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Box(Modifier.size(11.dp).clip(RoundedCornerShape(3.dp)).background(app.ink))
+            Text(app.label.uppercase(), style = BadgeLabel, color = app.ink)
+        }
+        if (computer != null) {
+            Text(
+                "FROM ${computer.uppercase().take(18)}",
+                style = BadgeLabel,
+                color = com.knoxx.dailyflow.ui.theme.VioletDeep,
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background(com.knoxx.dailyflow.ui.theme.VioletTint)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
     }
 }
+
+/** The PC a memory came from, or null when this phone saw it itself. */
+val com.knoxx.dailyflow.data.MemoryEntity.computerName: String?
+    get() = if (fromComputer) (originName ?: "PC") else null
 
 /**
  * Initial in a circle. The tone is derived from the name hash so one person

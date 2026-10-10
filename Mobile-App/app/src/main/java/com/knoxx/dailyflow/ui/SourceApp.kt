@@ -40,7 +40,25 @@ private val KNOWN get() = mapOf(
     "com.google.android.calendar" to SourceApp("Calendar", BlueTint, BlueInk),
     "com.google.android.apps.docs" to SourceApp("Docs", BlueTint, BlueInk),
     "com.discord" to SourceApp("Discord", VioletTint, VioletDeep),
-    "com.notion.id" to SourceApp("Notion", PaperSunken, InkMuted)
+    "com.notion.id" to SourceApp("Notion", PaperSunken, InkMuted),
+
+    // Memories synced from a paired PC carry the Windows app or the website
+    // they were read from. Without these the fallback below turns
+    // "whatsapp.root.exe" into "Exe" and "mail.google.com" into "Com".
+    "whatsapp.root.exe" to SourceApp("WhatsApp", GreenTint, GreenInk),
+    "whatsapp.exe" to SourceApp("WhatsApp", GreenTint, GreenInk),
+    "web.whatsapp.com" to SourceApp("WhatsApp", GreenTint, GreenInk),
+    "mail.google.com" to SourceApp("Gmail", OrangeTint, OrangeInk),
+    "calendar.google.com" to SourceApp("Calendar", BlueTint, BlueInk),
+    "classroom.google.com" to SourceApp("Classroom", GreenTint, GreenInk),
+    "app.slack.com" to SourceApp("Slack", VioletTint, VioletDeep),
+    "slack.exe" to SourceApp("Slack", VioletTint, VioletDeep),
+    "teams.microsoft.com" to SourceApp("Teams", VioletTint, VioletDeep),
+    "ms-teams.exe" to SourceApp("Teams", VioletTint, VioletDeep),
+    "discord.com" to SourceApp("Discord", VioletTint, VioletDeep),
+    "discord.exe" to SourceApp("Discord", VioletTint, VioletDeep),
+    "outlook.exe" to SourceApp("Outlook", BlueTint, BlueInk),
+    "olk.exe" to SourceApp("Outlook", BlueTint, BlueInk)
 )
 
 /** Rows the user typed themselves, rather than anything captured. */
@@ -51,7 +69,17 @@ val CalendarSource get() = SourceApp("Calendar", BlueTint, BlueInk)
 
 fun sourceAppFor(packageName: String?): SourceApp {
     if (packageName.isNullOrBlank()) return ManualSource
+    KNOWN[packageName.lowercase()]?.let { return it }
     KNOWN[packageName]?.let { return it }
+
+    // A Windows program from a paired PC: "notepad.exe" -> "Notepad".
+    if (packageName.endsWith(".exe", ignoreCase = true)) {
+        return SourceApp(
+            label = packageName.dropLast(4).replaceFirstChar { it.uppercase() }.take(12),
+            tint = PaperSunken,
+            ink = InkMuted
+        )
+    }
 
     // Fallback: take the most distinctive path segment. "com.zeptoconsumerapp"
     // → "Zeptoconsumerapp" is ugly, so prefer the last segment and cap it.

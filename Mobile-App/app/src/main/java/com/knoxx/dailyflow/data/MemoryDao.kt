@@ -223,7 +223,8 @@ interface MemoryDao {
      */
     @Query(
         "SELECT packageName AS packageName, COUNT(*) AS captureCount FROM memories " +
-            "WHERE packageName != '' GROUP BY packageName ORDER BY captureCount DESC"
+            "WHERE packageName != '' AND originDevice IS NULL " +
+            "GROUP BY packageName ORDER BY captureCount DESC"
     )
     fun observePackageCounts(): Flow<List<PackageCount>>
 

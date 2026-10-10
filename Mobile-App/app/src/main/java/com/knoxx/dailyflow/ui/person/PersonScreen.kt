@@ -1,5 +1,6 @@
 package com.knoxx.dailyflow.ui.person
 
+import com.knoxx.dailyflow.ui.computerName
 import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -366,7 +367,8 @@ private fun InteractionRow(memory: MemoryEntity, modifier: Modifier = Modifier) 
                 }
                 SourceBadge(
                     memory.packageName.ifBlank { null },
-                    Modifier.padding(top = 8.dp)
+                    Modifier.padding(top = 8.dp),
+                    computer = memory.computerName
                 )
             }
         }

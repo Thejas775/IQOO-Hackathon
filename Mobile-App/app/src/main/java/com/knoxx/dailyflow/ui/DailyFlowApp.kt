@@ -39,6 +39,7 @@ import com.knoxx.dailyflow.capture.CapturePermission
 import com.knoxx.dailyflow.capture.NotificationPermission
 import com.knoxx.dailyflow.cloud.AuthRepository
 import com.knoxx.dailyflow.cloud.ConnectAssistantScreen
+import com.knoxx.dailyflow.sync.ComputersScreen
 import com.knoxx.dailyflow.cloud.SignInScreen
 import com.knoxx.dailyflow.data.DeviceCalendar
 import com.knoxx.dailyflow.data.MemoryEntity
@@ -88,6 +89,7 @@ fun DailyFlowApp() {
     var showVoice by remember { mutableStateOf(false) }
     var showConnect by remember { mutableStateOf(false) }
     var showSignIn by remember { mutableStateOf(false) }
+    var showComputers by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val modelVm: ModelSetupViewModel = viewModel()
@@ -259,7 +261,8 @@ fun DailyFlowApp() {
                         onStopSync = vm::stopSync,
                         onNotificationAccess = {
                             context.startActivity(NotificationPermission.settingsIntent())
-                        }
+                        },
+                        onComputers = { showComputers = true }
                     )
                 }
 
@@ -271,7 +274,7 @@ fun DailyFlowApp() {
         // while it is open — showing it would suggest the detail is a fifth
         // tab, and tapping the current tab would appear to do nothing.
         if (openPerson == null && !showAllowList && !showMemories && !showDev &&
-            !showVoice && !showConnect && !showSignIn
+            !showVoice && !showConnect && !showSignIn && !showComputers
         ) {
             BottomNav(
                 current = tab,
@@ -358,6 +361,10 @@ fun DailyFlowApp() {
 
         if (showConnect) {
             ConnectAssistantScreen(onBack = { showConnect = false })
+        }
+
+        if (showComputers) {
+            ComputersScreen(onBack = { showComputers = false })
         }
     }
 

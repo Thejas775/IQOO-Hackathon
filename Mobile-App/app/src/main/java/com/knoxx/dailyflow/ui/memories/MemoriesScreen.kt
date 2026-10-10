@@ -1,5 +1,6 @@
 package com.knoxx.dailyflow.ui.memories
 
+import com.knoxx.dailyflow.ui.computerName
 import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -172,7 +173,8 @@ private fun MemoryCard(memory: MemoryEntity, onDelete: () -> Unit) {
             ) {
                 memory.category?.let { CategoryTag(it) }
                 Text(
-                    sourceAppFor(memory.packageName).label,
+                    sourceAppFor(memory.packageName).label +
+                        (memory.computerName?.let { " · from $it" } ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = InkFaint
                 )

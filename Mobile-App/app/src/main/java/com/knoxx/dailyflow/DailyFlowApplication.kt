@@ -6,6 +6,8 @@ import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.debug.DebugLog
 import com.knoxx.dailyflow.ml.EmbeddingEngine
+import com.knoxx.dailyflow.sync.PairedComputers
+import com.knoxx.dailyflow.sync.PcSyncScheduler
 import com.knoxx.dailyflow.ui.theme.ThemePreference
 import com.knoxx.dailyflow.work.ExtractionNotification
 import com.knoxx.dailyflow.work.ExtractionScheduler
@@ -48,5 +50,15 @@ class DailyFlowApplication : Application() {
         ExtractionNotification.ensureChannel(this)
         ReminderScheduler.ensureChannel(this)
         ExtractionScheduler.schedulePeriodic(this)
+
+        // PC sync. Only does anything once a computer is paired (You → Add
+        // computer): every 15 minutes on Wi-Fi, a few seconds after any
+        // change here, and once now so opening the app brings in what the
+        // PC learned meanwhile.
+        MemoryRepository.setOnLocalChange { PcSyncScheduler.requestSoon(this) }
+        if (PairedComputers.all(this).isNotEmpty()) {
+            PcSyncScheduler.schedulePeriodic(this)
+            PcSyncScheduler.requestSoon(this, delaySeconds = 2)
+        }
     }
 }
