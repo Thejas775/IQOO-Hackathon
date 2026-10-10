@@ -44,6 +44,8 @@ import com.knoxx.dailyflow.ui.SecondaryChip
 import com.knoxx.dailyflow.ui.SectionHeader
 import com.knoxx.dailyflow.ui.SourceBadge
 import com.knoxx.dailyflow.ui.StatTile
+import com.knoxx.dailyflow.ui.Qoo
+import com.knoxx.dailyflow.ui.QooTile
 import com.knoxx.dailyflow.ui.SunkenPanel
 import com.knoxx.dailyflow.ui.categoryColorsFor
 import com.knoxx.dailyflow.ui.flowClickable
@@ -295,7 +297,21 @@ private fun CountRow(counts: DayCounts, modifier: Modifier = Modifier) {
 @Composable
 private fun TimelineEmpty(pending: Int, modifier: Modifier = Modifier) {
     SunkenPanel(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // QOO reports the state rather than decorating it: working when
+            // there is a backlog, asleep when there is genuinely nothing. An
+            // empty screen with no explanation reads as a broken app, and a
+            // mascot that is visibly busy says "not broken, just thinking"
+            // faster than the sentence underneath it does.
+            QooTile(
+                if (pending > 0) Qoo.Thinking else Qoo.Sleeping,
+                size = 104.dp,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
             Text(
                 if (pending > 0) "Still reading your day" else "Nothing scheduled today",
                 style = MaterialTheme.typography.titleSmall,
@@ -314,6 +330,7 @@ private fun TimelineEmpty(pending: Int, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall,
                 color = InkSecondary
             )
+            // centred to match the mascot above it
         }
     }
 }
