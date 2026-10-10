@@ -1,2 +1,7 @@
 # Gradle daemon state, created when a build runs from the repo root.
 .gradle/
+
+# Editor state. Hardware-Code's holds an absolute ESP-IDF path that is only
+# valid on the machine that wrote it, so committing it breaks the build for
+# everyone else rather than helping them.
+.vscode/
