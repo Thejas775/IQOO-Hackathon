@@ -31,15 +31,18 @@ data class CategoryColors(
     val ink: Color
 )
 
-private val Work = CategoryColors("Work", Violet, VioletTint, VioletDeep)
-private val Personal = CategoryColors("Personal", Green, GreenTint, GreenInk)
-private val Home = CategoryColors("Home", Blue, BlueTint, BlueInk)
-private val Other = CategoryColors("Other", InkSecondary, PaperSunken, InkSecondary)
+// Getters, not vals: a val is evaluated once at class-init, which would pin
+// these four to whichever palette happened to be loaded first and leave every
+// category tag on the old colours after a theme switch.
+private val Work get() = CategoryColors("Work", Violet, VioletTint, VioletDeep)
+private val Personal get() = CategoryColors("Personal", Green, GreenTint, GreenInk)
+private val Home get() = CategoryColors("Home", Blue, BlueTint, BlueInk)
+private val Other get() = CategoryColors("Other", InkSecondary, PaperSunken, InkSecondary)
 
 /** Used by the Calendar legend, where "Promise" is a category-like filter
  *  even though it comes from [com.knoxx.dailyflow.data.Direction], not the
  *  category field. */
-val PromiseColors = CategoryColors("Promise", Orange, OrangeTint, OrangeInk)
+val PromiseColors get() = CategoryColors("Promise", Orange, OrangeTint, OrangeInk)
 
 fun categoryColorsFor(category: String?): CategoryColors =
     when (category?.trim()?.lowercase()) {

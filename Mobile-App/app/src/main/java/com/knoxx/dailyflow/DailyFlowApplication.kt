@@ -6,6 +6,7 @@ import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.debug.DebugLog
 import com.knoxx.dailyflow.ml.EmbeddingEngine
+import com.knoxx.dailyflow.ui.theme.ThemePreference
 import com.knoxx.dailyflow.work.ExtractionNotification
 import com.knoxx.dailyflow.work.ExtractionScheduler
 import com.knoxx.dailyflow.work.ReminderScheduler
@@ -25,6 +26,10 @@ import com.knoxx.dailyflow.work.ReminderScheduler
 class DailyFlowApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Before anything can draw: the palette has to be in place for the
+        // first frame or a cold start flashes the other identity.
+        ThemePreference.load(this)
+
         DebugLog.init(this)
         MemoryRepository.init(this)
         CapturePreferences.init(this)

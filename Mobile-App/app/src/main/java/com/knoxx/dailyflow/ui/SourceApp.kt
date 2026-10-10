@@ -24,7 +24,10 @@ import com.knoxx.dailyflow.ui.theme.VioletTint
  */
 data class SourceApp(val label: String, val tint: Color, val ink: Color)
 
-private val KNOWN = mapOf(
+// Rebuilt per lookup rather than held, for the same reason as the category
+// colours: a held map would freeze its tints at class-init and survive a
+// theme switch. Thirteen entries is cheap next to the row it decorates.
+private val KNOWN get() = mapOf(
     "com.whatsapp" to SourceApp("WhatsApp", GreenTint, GreenInk),
     "com.whatsapp.w4b" to SourceApp("WhatsApp", GreenTint, GreenInk),
     "com.Slack" to SourceApp("Slack", VioletTint, VioletDeep),
@@ -41,10 +44,10 @@ private val KNOWN = mapOf(
 )
 
 /** Rows the user typed themselves, rather than anything captured. */
-val ManualSource = SourceApp("Manual", PaperSunken, InkMuted)
+val ManualSource get() = SourceApp("Manual", PaperSunken, InkMuted)
 
 /** Events read from the device calendar provider, not from screen capture. */
-val CalendarSource = SourceApp("Calendar", BlueTint, BlueInk)
+val CalendarSource get() = SourceApp("Calendar", BlueTint, BlueInk)
 
 fun sourceAppFor(packageName: String?): SourceApp {
     if (packageName.isNullOrBlank()) return ManualSource

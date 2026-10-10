@@ -9,19 +9,23 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 /**
- * Light only, on purpose.
+ * Two identities, never a flip of one another.
  *
- * The redesign commits to a warm paper ground — the ink tones, the tint
- * backgrounds behind category tags, and the violet gradient on the morning
- * brief are all chosen against a light surface. A naive dark inversion would
- * turn the tints muddy and put a saturated violet gradient on black, which is
- * the generic "AI app" look the palette was built to avoid. Dark mode is a
- * real design exercise for later, not a colour flip.
+ * Paper is the shipping look. QOO is the mascot's own colours — and it is a
+ * separate palette rather than a dark-mode inversion for exactly the reason
+ * dark mode was refused here before: inverting the tints goes muddy and puts
+ * a saturated gradient on black, which is the generic "AI app" look this
+ * palette was built to avoid. Every tone in the QOO set was picked against a
+ * dark ground, not computed from the light one. See `Palette.kt`.
  *
- * Dynamic colour is also off: DailyFlow's identity *is* this palette, and
+ * A getter, not a val — the scheme has to be rebuilt when the palette changes,
+ * and reading it inside a composable is what makes the switch take effect
+ * without recreating the activity.
+ *
+ * Dynamic colour stays off in both: DailyFlow's identity *is* its palette, and
  * letting the launcher wallpaper recolour it would erase that.
  */
-private val DailyFlowColors = lightColorScheme(
+private val DailyFlowColors get() = lightColorScheme(
     primary = Violet,
     onPrimary = CardWhite,
     primaryContainer = VioletTint,
@@ -58,14 +62,18 @@ private val DailyFlowColors = lightColorScheme(
 @Composable
 fun DailyFlowTheme(content: @Composable () -> Unit) {
     val view = LocalView.current
+    // Read here, in composition, so this composable subscribes to the palette
+    // and both the bars and the scheme below refresh on a switch.
+    val palette = current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // Light ground means dark status-bar icons; without this the
-            // system draws white-on-white and the clock disappears.
+            // A light ground needs dark status-bar icons and a dark ground
+            // needs light ones; get this backwards and the clock vanishes
+            // into the bar. Keyed on the palette so it follows the switch.
             WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = true
-                isAppearanceLightNavigationBars = true
+                isAppearanceLightStatusBars = !palette.lightStatusBarIcons
+                isAppearanceLightNavigationBars = !palette.lightStatusBarIcons
             }
         }
     }

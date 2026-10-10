@@ -1,7 +1,6 @@
 package com.knoxx.dailyflow.ui
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,13 +14,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.knoxx.dailyflow.R
+import kotlin.math.roundToInt
 
 /**
  * QOO, in whichever state the app is actually in.
@@ -49,17 +52,24 @@ enum class Qoo(val art: Int) {
 }
 
 /**
- * The mascot on its own dark tile.
+ * The mascot, on a tile or dissolved into the page.
  *
- * The art is a black robot lit by amber glow, photographed on black. Its body
- * and its backdrop are the same colour, so there is no cutout that keeps the
- * character — removing the background would remove most of QOO with it. The
- * tile is the answer: the dark ground stays, and becomes deliberate rather
- * than an artefact.
+ * The art is a black robot lit by amber glow, rendered on black. Its body and
+ * its backdrop are the same colour, so no cutout keeps the character —
+ * removing the background removes most of QOO with it. Two answers, one per
+ * identity:
  *
- * That also lets it sit in a light app without fighting it. The Morning Brief
- * is already a dark gradient card, so a dark tile reads as part of the same
- * system rather than a foreign object dropped onto paper.
+ * - On paper there is no hiding it, so the dark ground is made deliberate: a
+ *   tile. The Morning Brief is already a dark gradient card, so the tile reads
+ *   as part of that system rather than a foreign object dropped onto paper.
+ * - On the QOO palette the art is drawn with a Screen blend, where a black
+ *   source pixel leaves whatever is beneath it untouched. The backdrop
+ *   evaporates into the card and only the glow is left — the cutout the file
+ *   itself cannot provide.
+ *
+ * Both paths draw through one Canvas rather than branching between an Image
+ * and a Canvas, so the mascot is laid out identically either way and swapping
+ * the theme cannot shift him by a pixel.
  */
 @Composable
 fun QooTile(
@@ -67,21 +77,40 @@ fun QooTile(
     modifier: Modifier = Modifier,
     size: Dp = 96.dp
 ) {
-    Box(
+    val palette = com.knoxx.dailyflow.ui.theme.current
+    val art = ImageBitmap.imageResource(qoo.art)
+
+    Canvas(
         modifier
             .size(size)
             .clip(MaterialTheme.shapes.large)
-            // Not pure black: a few points of lift separates the tile from the
-            // art's own backdrop, so the mascot reads as sitting *in* something
-            // rather than being a hole in the page.
-            .background(QooGround),
-        contentAlignment = Alignment.Center
     ) {
-        Image(
-            painter = painterResource(qoo.art),
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.size(size)
+        // Drawn here rather than via Modifier.background because Screen has to
+        // blend against something inside this same draw pass — a modifier
+        // background sits in a different layer and the blend would find
+        // transparent black and swallow the mascot whole.
+        drawRect(palette.qooGround)
+
+        // Fit, by hand: the poses were trimmed to their own ink and are not
+        // square, so scaling by the smaller ratio is what keeps a wide pose
+        // from being cropped at the ears.
+        val scale = minOf(this.size.width / art.width, this.size.height / art.height)
+        val drawn = IntSize((art.width * scale).roundToInt(), (art.height * scale).roundToInt())
+
+        drawImage(
+            image = art,
+            srcOffset = IntOffset.Zero,
+            srcSize = IntSize(art.width, art.height),
+            dstOffset = IntOffset(
+                ((this.size.width - drawn.width) / 2).roundToInt(),
+                ((this.size.height - drawn.height) / 2).roundToInt()
+            ),
+            dstSize = drawn,
+            // The source art is ~250px drawn at up to 108dp, so it is being
+            // scaled down on every device here; High costs nothing at this
+            // size and keeps the glow edges from crawling.
+            filterQuality = FilterQuality.High,
+            blendMode = if (palette.blendMascot) BlendMode.Screen else BlendMode.SrcOver
         )
     }
 }
@@ -146,5 +175,6 @@ fun QooRow(
     }
 }
 
-/** Near-black, slightly lifted — see [QooTile]. */
-private val QooGround = Color(0xFF14130F)
+// The tile ground moved into the palette: on the QOO identity it equals the
+// card colour, so the tile stops reading as a box and the mascot sits
+// directly on the surface. See Palette.qooGround.

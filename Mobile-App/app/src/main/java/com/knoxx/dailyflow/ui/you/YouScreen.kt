@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 // Delegate operators for `by remember { ... }` — extensions, so they have to
@@ -28,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,10 +42,13 @@ import com.knoxx.dailyflow.data.CapturePreferences
 import com.knoxx.dailyflow.data.CaptureStats
 import com.knoxx.dailyflow.data.MemoryRepository
 import com.knoxx.dailyflow.ui.FlowCard
+import com.knoxx.dailyflow.ui.Qoo
+import com.knoxx.dailyflow.ui.QooTile
 import com.knoxx.dailyflow.ui.PrimaryChip
 import com.knoxx.dailyflow.ui.SecondaryChip
 import com.knoxx.dailyflow.ui.SunkenPanel
 import com.knoxx.dailyflow.ui.flowClickable
+import com.knoxx.dailyflow.ui.theme.ThemePreference
 import com.knoxx.dailyflow.ui.theme.BorderStrong
 import com.knoxx.dailyflow.ui.theme.CardWhite
 import com.knoxx.dailyflow.ui.theme.Danger
@@ -235,6 +241,8 @@ fun YouScreen(
                 NavRow("Tuning", "Send test reminders, and run prompts against Gemma", null, onOpenDev)
             }
         }
+
+        item { ThemeCard(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp)) }
 
         item { StorageCard(state, onErase, Modifier.padding(20.dp)) }
     }
@@ -515,6 +523,50 @@ private fun NavRow(title: String, subtitle: String, trailing: String?, onClick: 
             }
             trailing?.let { Text(it, style = MonoFigure, color = InkSecondary) }
             Text("›", style = MaterialTheme.typography.titleMedium, color = InkSecondary)
+        }
+    }
+}
+
+/**
+ * The two identities, as a switch.
+ *
+ * A setting rather than a build flag because the point is comparison: the
+ * palette swap is live, so this toggles the look under the user's thumb and
+ * back again with nothing lost either way. The choice is remembered, so the
+ * answer to "what if I hate it" is one tap, not a reinstall.
+ */
+@Composable
+private fun ThemeCard(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var qoo by remember { mutableStateOf(ThemePreference.isQoo(context)) }
+
+    FlowCard(modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // The mascot is the argument for the theme, so he makes it
+            // himself — on the QOO palette his tile matches the card and he
+            // stops looking pasted on, which is visible right here in the row.
+            QooTile(if (qoo) Qoo.Waving else Qoo.Resting, size = 52.dp)
+            Column(Modifier.weight(1f)) {
+                Text("QOO theme", style = MaterialTheme.typography.titleSmall, color = Ink)
+                Text(
+                    if (qoo) "QOO's own colours — dark ground, amber glow"
+                    else "Paper — the light ground DailyFlow ships with",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSecondary
+                )
+            }
+            Switch(
+                checked = qoo,
+                onCheckedChange = {
+                    qoo = it
+                    ThemePreference.set(context, it)
+                },
+                colors = SwitchDefaults.colors(checkedTrackColor = Violet)
+            )
         }
     }
 }
