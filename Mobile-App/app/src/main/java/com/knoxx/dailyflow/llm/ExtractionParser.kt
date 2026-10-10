@@ -109,7 +109,7 @@ object ExtractionParser {
             ?.toIntOrNull()
             ?.takeIf { it > 0 }
 
-        val isMemory = summary != null
+        val isMemory = summary != null && !describesTheScreen(summary)
         if (!isMemory) return Extraction(isMemory = false, completesIndex = completes)
 
         val due = ExtractionPrompt.parseDue(fields["DUE"].cleanOrNull())
@@ -133,6 +133,62 @@ object ExtractionParser {
             completesIndex = completes
         )
     }
+
+    /**
+     * Drops summaries about the display rather than the owner's life.
+     *
+     * The prompt asks for this too, but a prompt is a request and this is a
+     * guarantee: two of these landed in one day — "The screen shows various
+     * unread messages and notifications from different contacts and groups."
+     * and "The application is currently initializing." Both cost the owner a
+     * row in Memories that tells them nothing, and the second was already
+     * untrue by the time the extraction pass read it.
+     *
+     * Deliberately narrow, because the last blunt noise rule here killed
+     * every chat-list screen along with the noise. It fires only on a summary
+     * whose grammatical subject is the surface itself, or on a named
+     * transient state — never on content that merely mentions an app.
+     */
+    private fun describesTheScreen(summary: String): Boolean {
+        val s = summary.lowercase().trim()
+        return SCREEN_SUBJECT.containsMatchIn(s) || TRANSIENT_STATE.containsMatchIn(s)
+    }
+
+    /**
+     * "The screen shows…", "this page displays…". Anchored at the start so a
+     * memory that happens to mention a screen later on survives.
+     *
+     * Two narrowings, both from running it over real summaries rather than
+     * imagined ones:
+     *
+     * - "list" came out of the noun set. "The list of attendees was shared by
+     *   Ravi" is a memory, and the transient-state pattern below already
+     *   catches "the list is refreshing" without the help.
+     * - The noun has to be followed by a verb. Without that, "the page proofs
+     *   are due to the printer on Thursday" matched on "page" alone — a real
+     *   deadline thrown away because one word was ambiguous.
+     */
+    // Raw strings, because a heredoc has eaten a backslash out of this file
+    // before and turned a working pattern into a compile error.
+    private val SCREEN_SUBJECT = Regex(
+        """^(the|this)\s+(screen|page|view|interface|window|display)\s+""" +
+            """(is|was|shows|showed|displays|displayed|contains|lists|has|appears|seems)\b"""
+    )
+
+    /**
+     * States that expire in seconds: "is initializing", "is loading".
+     *
+     * The verb list is shorter than the obvious one on purpose. "connecting",
+     * "updating" and "processing" were in it until they were tested: "you are
+     * connecting Priya with the vendor on Monday", "you are updating the deck"
+     * and "your refund is processing" are all real memories and all three were
+     * being dropped. What is left is the set that takes no object — a thing
+     * that is loading is never loading *something* worth remembering.
+     */
+    private val TRANSIENT_STATE = Regex(
+        """\b(is|are|was|currently)\s+(currently\s+)?""" +
+            """(initializing|initialising|loading|syncing|buffering|refreshing|starting up)\b"""
+    )
 
     private val KNOWN_KEYS = setOf(
         "ISLOOP", "SUMMARY", "QUOTE", "DIRECTION", "PERSON", "CATEGORY", "DUE", "PROJECT",

@@ -110,6 +110,29 @@ object ExtractionPrompt {
                 "DailyFlow Redesign zip\" is a memory. Record the thing, not the notification."
         )
         appendLine(
+            // Two real rows that got through the rule above, both from one
+            // day: "The screen shows various unread messages and
+            // notifications from different contacts and groups." and "The
+            // application is currently initializing." Neither says anything
+            // about the owner's life — they describe the glass. The rule
+            // above does not catch them because they name no event at all,
+            // so they never look like a contentless notification; they look
+            // like an observation, and an observation is what was asked for.
+            "Write about the owner's life, never about the screen itself. If the subject of " +
+                "your sentence would be \"the screen\", \"the app\", \"the page\" or " +
+                "\"the list\", there is nothing to remember: answer ISLOOP: no. \"The " +
+                "screen shows several unread messages\" and \"the application is " +
+                "initializing\" are descriptions of a display, not memories."
+        )
+        appendLine(
+            // The same failure with a clock on it. These screens are real but
+            // last seconds, and a memory that was already untrue by the time
+            // the extraction pass ran is worse than no memory.
+            "A passing state of an app is never a memory: loading, initializing, connecting, " +
+                "syncing, buffering, updating, \"please wait\", an empty inbox, a spinner. " +
+                "None of these will still be true an hour from now."
+        )
+        appendLine(
             // Batching created its own pressure to record, so that prompt was
             // told most screens are worth nothing. Carried over to a single
             // screen judged alone, that removed the pressure and kept the
