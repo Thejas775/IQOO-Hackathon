@@ -1,0 +1,214 @@
+"""Generate the on-screen text sprites: the digit set and the state labels.
+
+The device has no font engine, so every piece of text it can ever show is pre-rendered
+here into big-endian RGB565 sprites. Digits are a fixed-cell sheet because the pairing
+code and the recording timer are both composed at runtime from changing digits; the
+state labels never change, so each is baked as one strip.
+
+Everything is amber on black to match QOO's own glow, which also makes compositing
+trivial: the device blends sprites onto the mascot with a per-channel max, so the black
+ground disappears and only the glow lands.
+"""
+import os
+import sys
+from PIL import Image, ImageDraw, ImageFont
+
+SP = os.path.dirname(os.path.abspath(__file__))
+OUT_C = sys.argv[1]
+OUT_H = sys.argv[2]
+
+PANEL_W = 240
+
+GLYPH_W, GLYPH_H = 32, 46
+GLYPHS = "0123456789:"
+GLYPH_FONT = (r"C:\Windows\Fonts\seguisb.ttf", 40)
+
+LABEL_W, LABEL_H = 240, 24
+LABEL_FONT = (r"C:\Windows\Fonts\seguisb.ttf", 17)
+LABELS = [
+    ("label_pairing", "PAIRING CODE"),
+    ("label_connecting", "JOINING WIFI"),
+    ("label_sending", "SENDING"),
+    ("label_listening", "ASK ME"),
+    ("label_answering", "ANSWERING"),
+    ("label_ready", "READY"),
+    ("label_recording", "RECORDING"),
+    ("label_thinking", "THINKING"),
+    ("label_muted", "MIC MUTED"),
+]
+
+AMBER = (255, 186, 32)
+
+BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
+
+
+def to_rgb565_be(im):
+    """Quantize to RGB565 with 4x4 ordered dithering; return big-endian bytes."""
+    w, h = im.size
+    px = im.load()
+    out = bytearray()
+    for y in range(h):
+        row = BAYER[y & 3]
+        for x in range(w):
+            r, g, b = px[x, y][:3]
+            t = (row[x & 3] - 7.5) / 16.0
+            r = min(255, max(0, int(r + t * (255 / 31))))
+            g = min(255, max(0, int(g + t * (255 / 63))))
+            b = min(255, max(0, int(b + t * (255 / 31))))
+            v = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
+            out += bytes((v >> 8, v & 0xFF))
+    return out
+
+
+def emit(f, sym, data, comment):
+    f.write("/* %s */\n" % comment)
+    f.write("const uint8_t %s[%d] = {\n" % (sym, len(data)))
+    for i in range(0, len(data), 16):
+        f.write("    " + "".join("0x%02X," % b for b in data[i:i + 16]) + "\n")
+    f.write("};\n\n")
+
+
+def render_glyph_sheet():
+    """One fixed-width cell per glyph, each centred in its cell."""
+    font = ImageFont.truetype(*GLYPH_FONT)
+    sheet = Image.new("RGB", (GLYPH_W * len(GLYPHS), GLYPH_H), (0, 0, 0))
+    draw = ImageDraw.Draw(sheet)
+    for index, ch in enumerate(GLYPHS):
+        bb = font.getbbox(ch)
+        x = index * GLYPH_W + (GLYPH_W - (bb[2] - bb[0])) // 2 - bb[0]
+        y = (GLYPH_H - (bb[3] - bb[1])) // 2 - bb[1]
+        draw.text((x, y), ch, font=font, fill=AMBER)
+    return sheet
+
+
+def render_label(text):
+    """A full-panel-width strip with the text centred, so the device blits at x = 0."""
+    font = ImageFont.truetype(*LABEL_FONT)
+    im = Image.new("RGB", (LABEL_W, LABEL_H), (0, 0, 0))
+    draw = ImageDraw.Draw(im)
+    # Letter-spaced, because small caps set tight read as a smudge at this size.
+    spacing = 2
+    widths = [font.getbbox(c)[2] - font.getbbox(c)[0] for c in text]
+    total = sum(widths) + spacing * (len(text) - 1)
+    x = (LABEL_W - total) / 2.0
+    bb = font.getbbox(text)
+    y = (LABEL_H - (bb[3] - bb[1])) // 2 - bb[1]
+    for ch, w in zip(text, widths):
+        draw.text((x - font.getbbox(ch)[0], y), ch, font=font, fill=AMBER)
+        x += w + spacing
+    return im
+
+
+FONT_FILE = (r"C:\Windows\Fonts\segoeui.ttf", 17)
+FONT_FIRST, FONT_LAST = 32, 126           # printable ASCII
+FONT_H = 22
+
+
+def render_font():
+    """A proportional ASCII strip plus per-glyph widths.
+
+    Proportional rather than fixed-cell: an answer is a sentence, and monospaced prose
+    at this size wastes most of a 240 px line. Each glyph is packed side by side into
+    one strip; the device slices it using the offset and width tables.
+    """
+    font = ImageFont.truetype(*FONT_FILE)
+    chars = [chr(c) for c in range(FONT_FIRST, FONT_LAST + 1)]
+
+    widths = []
+    for ch in chars:
+        # The advance, not the ink bounds: spacing between letters is part of the
+        # advance, and using the bounding box would jam every word together.
+        adv = int(round(font.getlength(ch)))
+        widths.append(max(adv, 1))
+
+    strip = Image.new("RGB", (sum(widths), FONT_H), (0, 0, 0))
+    draw = ImageDraw.Draw(strip)
+    # One shared baseline, from the font's own ascent, so letters sit on a line
+    # instead of each being centred in its own cell.
+    ascent, _ = font.getmetrics()
+    top = max(0, (FONT_H - ascent) // 2)
+    x = 0
+    offsets = []
+    for ch, w in zip(chars, widths):
+        offsets.append(x)
+        draw.text((x, top), ch, font=font, fill=AMBER)
+        x += w
+    return strip, offsets, widths
+
+
+with open(OUT_C, "w") as f:
+    f.write('/* Generated by tools/mkui.py - do not edit. */\n#include "qoo_ui.h"\n\n')
+
+    strip, offsets, widths = render_font()
+    strip.save(os.path.join(SP, "preview_font.png"))
+    emit(f, "qoo_font", to_rgb565_be(strip),
+         "Proportional ASCII %d-%d, %d px tall, packed side by side." %
+         (FONT_FIRST, FONT_LAST, FONT_H))
+    f.write("const uint16_t qoo_font_x[%d] = {%s};\n\n"
+            % (len(offsets), ",".join(str(v) for v in offsets)))
+    f.write("const uint8_t qoo_font_w[%d] = {%s};\n\n"
+            % (len(widths), ",".join(str(v) for v in widths)))
+    print("font: %d glyphs, strip %dx%d" % (len(widths), strip.width, FONT_H))
+
+    sheet = render_glyph_sheet()
+    sheet.save(os.path.join(SP, "preview_glyphs.png"))
+    emit(f, "qoo_glyphs", to_rgb565_be(sheet),
+         "Glyph sheet: %s, %dx%d per cell, laid out left to right." % (GLYPHS, GLYPH_W, GLYPH_H))
+
+    for sym, text in LABELS:
+        im = render_label(text)
+        im.save(os.path.join(SP, "preview_%s.png" % sym))
+        emit(f, "qoo_" + sym, to_rgb565_be(im), '%dx%d strip: "%s"' % (LABEL_W, LABEL_H, text))
+        print("%-18s %s" % (sym, text))
+
+with open(OUT_H, "w") as f:
+    f.write("""/* Generated by tools/mkui.py - do not edit.
+ *
+ * Pre-rendered text sprites, big-endian RGB565, amber on black. The device has no font
+ * engine; these are everything it can draw as text.
+ */
+#pragma once
+
+#include <stdint.h>
+
+/** Width of one glyph cell in the sheet. */
+#define GLYPH_W %d
+/** Height of one glyph cell in the sheet. */
+#define GLYPH_H %d
+/** Number of glyph cells in the sheet. */
+#define GLYPH_COUNT %d
+/** Index of the colon cell, used by the recording timer. */
+#define GLYPH_COLON 10
+
+/** Width of a label strip; matches the panel so labels blit at x = 0. */
+#define LABEL_W %d
+/** Height of a label strip. */
+#define LABEL_H %d
+
+/** Glyph sheet: '%s', GLYPH_COUNT cells of GLYPH_W x GLYPH_H, left to right. */
+extern const uint8_t qoo_glyphs[GLYPH_COUNT * GLYPH_W * GLYPH_H * 2];
+
+/** First character in the proportional font. */
+#define FONT_FIRST %d
+/** Last character in the proportional font. */
+#define FONT_LAST %d
+/** Height of the font strip in pixels. */
+#define FONT_H %d
+/** Number of glyphs in the font. */
+#define FONT_COUNT (FONT_LAST - FONT_FIRST + 1)
+/** Total width of the packed font strip in pixels. */
+#define FONT_STRIP_W %d
+
+/** Proportional ASCII font, amber on black, all glyphs packed side by side. */
+extern const uint8_t qoo_font[FONT_STRIP_W * FONT_H * 2];
+/** X offset of each glyph within the strip. */
+extern const uint16_t qoo_font_x[FONT_COUNT];
+/** Advance width of each glyph. */
+extern const uint8_t qoo_font_w[FONT_COUNT];
+
+""" % (GLYPH_W, GLYPH_H, len(GLYPHS), LABEL_W, LABEL_H, GLYPHS,
+       FONT_FIRST, FONT_LAST, FONT_H, sum(widths)))
+    for sym, text in LABELS:
+        f.write('/** "%s" */\nextern const uint8_t qoo_%s[LABEL_W * LABEL_H * 2];\n\n' % (text, sym))
+
+print("glyph sheet: %d cells of %dx%d" % (len(GLYPHS), GLYPH_W, GLYPH_H))

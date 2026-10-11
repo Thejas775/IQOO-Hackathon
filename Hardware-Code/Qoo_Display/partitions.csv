@@ -1,0 +1,8 @@
+# Custom table: the default single-app-large layout caps the app at 1.5 MB, and the
+# firmware passed that once the WiFi stack landed on top of ~710 KB of mascot art and
+# text sprites. The board has 16 MB of flash, so the app gets 4 MB and there is room
+# left for OTA or a filesystem later.
+# Name,     Type, SubType, Offset,   Size,  Flags
+nvs,        data, nvs,     0x9000,   0x6000,
+phy_init,   data, phy,     0xf000,   0x1000,
+factory,    app,  factory, 0x10000,  4M,
