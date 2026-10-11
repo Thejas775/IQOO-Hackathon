@@ -60,6 +60,7 @@ import com.knoxx.dailyflow.ui.person.PersonViewModel
 import com.knoxx.dailyflow.ui.theme.Ink
 import com.knoxx.dailyflow.ui.theme.InkSecondary
 import com.knoxx.dailyflow.ui.theme.Paper
+import com.knoxx.dailyflow.ui.device.QooDeviceScreen
 import com.knoxx.dailyflow.ui.today.DraftSheet
 import com.knoxx.dailyflow.ui.today.TodayScreen
 import com.knoxx.dailyflow.ui.today.TodayViewModel
@@ -85,6 +86,8 @@ fun DailyFlowApp() {
     var showAllowList by remember { mutableStateOf(false) }
     var showMemories by remember { mutableStateOf(false) }
     var showDev by remember { mutableStateOf(false) }
+    var showQoo by remember { mutableStateOf(false) }
+    var showDevice by remember { mutableStateOf(false) }
     var showVoice by remember { mutableStateOf(false) }
     var showConnect by remember { mutableStateOf(false) }
     var showSignIn by remember { mutableStateOf(false) }
@@ -247,6 +250,8 @@ fun DailyFlowApp() {
                         onManageApps = { showAllowList = true },
                         onOpenMemories = { showMemories = true },
                         onOpenDev = { showDev = true },
+                        onOpenQoo = { showQoo = true },
+                        onOpenDevice = { showDevice = true },
                         onConnectAssistant = {
                             // Signing in is a precondition for the connector,
                             // not a separate feature: without an account there
@@ -271,7 +276,7 @@ fun DailyFlowApp() {
         // while it is open — showing it would suggest the detail is a fifth
         // tab, and tapping the current tab would appear to do nothing.
         if (openPerson == null && !showAllowList && !showMemories && !showDev &&
-            !showVoice && !showConnect && !showSignIn
+            !showQoo && !showDevice && !showVoice && !showConnect && !showSignIn
         ) {
             BottomNav(
                 current = tab,
@@ -318,6 +323,18 @@ fun DailyFlowApp() {
                 onTestCalendarReply = devVm::testCalendarReply,
                 onBenchmark = devVm::runFormatBenchmark
             )
+        }
+
+        if (showQoo) {
+            QooDeviceScreen(onBack = { showQoo = false })
+        }
+
+        // The audio encode benchmark. Separate from the device screen because it
+        // answers a different question: not "is the watch connected" but "how long
+        // does this phone take to hear a clip", which is what sets the watch's
+        // recording cap.
+        if (showDevice) {
+            AudioBenchScreen(onBack = { showDevice = false })
         }
 
         if (showVoice) {

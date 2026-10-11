@@ -295,17 +295,42 @@ object MemoryRepository {
          * a time the user picked. Treating those as stated made the
          * calendar-aware draft check availability at an hour nobody proposed.
          */
-        dueAtExplicit: Boolean = false
+        dueAtExplicit: Boolean = false,
+        /**
+         * Where this came from, when it was not typed here.
+         *
+         * Defaults to the empty string, which is what every existing caller produced
+         * and what [com.knoxx.dailyflow.ui.sourceAppFor] reads as "Manual". The QOO
+         * watch passes its own pseudo-package so its memories carry a visible badge —
+         * something overheard by a device in the room is not the same claim as
+         * something the owner typed, and the UI should not present them identically.
+         */
+        packageName: String = "",
+        /** Mirrors [packageName]: kept distinct so the trace log can tell a spoken
+         *  note from a typed one. */
+        eventType: String = "MANUAL",
+        /**
+         * Who owes whom, when the caller actually knows.
+         *
+         * Defaults to [Direction.MANUAL], which is right for a task typed in the Add
+         * sheet and is what every existing caller got. It is wrong for anything the
+         * model read, because the open-commitments query selects on
+         * `direction IN ('SELF_PROMISE','THEY_ASKED')` - so a promise arriving through
+         * this method was stored as MANUAL and could never appear under Commitments, no
+         * matter what the model had understood. It landed in the timeline and nowhere
+         * else.
+         */
+        direction: Direction = Direction.MANUAL
     ): Long = dao.insert(
         MemoryEntity(
             timestamp = System.currentTimeMillis(),
-            packageName = "",
+            packageName = packageName,
             rawText = title,
-            eventType = "MANUAL",
+            eventType = eventType,
             extracted = true,
             isLoop = true,
             summary = title,
-            direction = Direction.MANUAL.name,
+            direction = direction.name,
             dueAt = dueAt,
             dueAtExplicit = dueAt != null && dueAtExplicit,
             category = category,

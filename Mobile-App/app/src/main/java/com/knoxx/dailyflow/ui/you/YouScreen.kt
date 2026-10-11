@@ -196,6 +196,8 @@ fun YouScreen(
     onManageApps: () -> Unit,
     onOpenMemories: () -> Unit,
     onOpenDev: () -> Unit,
+    onOpenQoo: () -> Unit,
+    onOpenDevice: () -> Unit,
     onConnectAssistant: () -> Unit,
     onErase: () -> Unit,
     onSync: () -> Unit,
@@ -240,6 +242,8 @@ fun YouScreen(
                 NavRow("Manage app access", "Choose which apps DailyFlow may read", null, onManageApps)
                 NavRow("Connect an assistant", "Give Claude the address and password for your memory", null, onConnectAssistant)
                 NavRow("Tuning", "Send test reminders, and run prompts against Gemma", null, onOpenDev)
+                NavRow("QOO device", "Pair the watch and let it listen for you", null, onOpenQoo)
+                NavRow("Audio benchmark", "How long Gemma takes to hear a clip", null, onOpenDevice)
             }
         }
 
@@ -555,8 +559,8 @@ private fun BubbleCard(modifier: Modifier = Modifier) {
                 Text("Reply bubble", style = MaterialTheme.typography.titleSmall, color = Ink)
                 Text(
                     if (on) {
-                        "QOO waits in Gmail and your chat apps. Tap him and he reads the " +
-                            "thread, checks your calendar, and writes the reply into the box."
+                        "QOO waits on top of whatever you are using. Tap him and he reads " +
+                            "the screen, checks your calendar, and writes a reply into the box."
                     } else {
                         "Off — nothing is drawn over your other apps."
                     },

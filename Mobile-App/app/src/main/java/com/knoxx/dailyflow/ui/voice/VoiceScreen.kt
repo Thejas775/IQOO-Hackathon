@@ -165,7 +165,12 @@ class VoiceViewModel(app: Application) : AndroidViewModel(app) {
                     // Spoken notes do carry real times — "call the plumber at
                     // four" — so a due time parsed from speech is a stated
                     // one, unlike the Add sheet's day chips.
-                    dueAtExplicit = item.dueAtExplicit
+                    dueAtExplicit = item.dueAtExplicit,
+                    // The parsed direction was being dropped here, so every spoken
+                    // promise stored as MANUAL. The open-commitments query selects on
+                    // SELF_PROMISE / THEY_ASKED, so a voice note could reach the
+                    // timeline but never Commitments, however plainly it was a promise.
+                    direction = item.direction
                 )
             }
             DebugLog.log("voice", "saved ${items.size} items")

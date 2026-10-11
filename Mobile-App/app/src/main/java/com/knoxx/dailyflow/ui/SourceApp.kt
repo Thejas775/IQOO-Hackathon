@@ -43,14 +43,30 @@ private val KNOWN get() = mapOf(
     "com.notion.id" to SourceApp("Notion", PaperSunken, InkMuted)
 )
 
+/**
+ * Pseudo-package for memories overheard by the QOO watch rather than read from an app
+ * on this phone.
+ *
+ * A pseudo-package rather than a new column: the badge already keys off packageName, so
+ * every surface that draws one — timeline rows, commitment cards, person pages — shows
+ * the QOO chip with no further change and no migration. Same device the mascot lives on,
+ * and the same trick [ManualSource] and [CalendarSource] already use for a source that
+ * is not an installed app.
+ */
+const val QOO_PACKAGE = "qoo.device"
+
 /** Rows the user typed themselves, rather than anything captured. */
 val ManualSource get() = SourceApp("Manual", PaperSunken, InkMuted)
 
 /** Events read from the device calendar provider, not from screen capture. */
 val CalendarSource get() = SourceApp("Calendar", BlueTint, BlueInk)
 
+/** Heard by the watch. Amber, because that is QOO's own colour. */
+val QooSource get() = SourceApp("QOO", OrangeTint, OrangeInk)
+
 fun sourceAppFor(packageName: String?): SourceApp {
     if (packageName.isNullOrBlank()) return ManualSource
+    if (packageName == QOO_PACKAGE) return QooSource
     KNOWN[packageName]?.let { return it }
 
     // Fallback: take the most distinctive path segment. "com.zeptoconsumerapp"
